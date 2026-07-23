@@ -1,0 +1,6 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:54321/tenantos_registrar?sslmode=disable&ApplicationName=tenantos-registrar-local
+    username: tenantos-master
+    password: c4rl0sP@ssw0rds
+    driver-class-name: org.postgresql.Driver

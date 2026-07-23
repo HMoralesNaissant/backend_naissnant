@@ -1,4 +1,4 @@
-package com.naissant.backend;
+package com.tenantos.registrar;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;

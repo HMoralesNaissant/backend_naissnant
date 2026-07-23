@@ -1,3 +1,63 @@
 spring:
+  profiles:
+    active: local
+
+
   application:
     name: backend
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:54321/${DB_NAME}?sslmode=disable&ApplicationName=tenantos-registrar-local}
+    username: ${POSTGRES_USER}
+    password: ${POSTGRES_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      pool-name: tenantos-registrar-pool
+      minimum-idle: ${DB_POOL_MIN_IDLE:2}
+      maximum-pool-size: ${DB_POOL_MAX_SIZE:10}
+      idle-timeout: ${DB_POOL_IDLE_TIMEOUT_MS:300000}
+      max-lifetime: ${DB_POOL_MAX_LIFETIME_MS:1800000}
+      connection-timeout: ${DB_POOL_CONNECTION_TIMEOUT_MS:30000}
+      validation-timeout: ${DB_POOL_VALIDATION_TIMEOUT_MS:5000}
+      connection-test-query: SELECT 1
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: ${JPA_DDL_AUTO:update}
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+        format_sql: true
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+  sql:
+    init:
+      mode: never
+  flyway:
+    enabled: false
+    locations:
+      - classpath:db/migration
+    baselineOnMigrate: false
+  mail:
+    host: ${SMTP_HOST:localhost}
+    port: ${SMTP_PORT:1025}
+    username: ${SMTP_USERNAME:}
+    password: ${SMTP_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: ${SMTP_AUTH:false}
+          starttls:
+            enable: ${SMTP_STARTTLS:false}
+
+fe:
+  onboarding:
+    session-token-cookie-name: ${ONBOARDING_TOKEN_COOKIE_NAME:onboarding_token}
+    token-ttl-seconds: ${ONBOARDING_TOKEN_TTL_SECONDS:900}
+    otp-ttl-seconds: ${ONBOARDING_OTP_TTL_SECONDS:600}
+    otp-max-attempts: ${ONBOARDING_OTP_MAX_ATTEMPTS:5}
+    otp-from-address: ${ONBOARDING_OTP_FROM_ADDRESS:no-reply@tenantos.local}
+
+logging:
+  level:
+    org.flywaydb: DEBUG
+

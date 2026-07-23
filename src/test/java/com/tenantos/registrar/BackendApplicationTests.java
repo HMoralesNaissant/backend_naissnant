@@ -1,4 +1,4 @@
-package com.naissant.backend;
+package com.tenantos.registrar;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;

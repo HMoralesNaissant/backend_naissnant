@@ -1,11 +1,17 @@
+buildscript {
+	dependencies {
+		classpath 'org.flywaydb:flyway-database-postgresql:11.1.0'
+	}
+}
+
 plugins {
 	id 'java'
 	id 'org.springframework.boot' version '4.0.6'
 	id 'io.spring.dependency-management' version '1.1.7'
 }
 
-group = 'com.naissant'
-version = '0.0.1-SNAPSHOT'
+group = 'com.tenantos.registrar'
+version = '0.0.1'
 
 java {
 	toolchain {
@@ -17,14 +23,22 @@ repositories {
 	mavenCentral()
 }
 
+
 dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-actuator'
 	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+	implementation 'org.springframework.boot:spring-boot-starter-mail'
 	implementation 'org.springframework.boot:spring-boot-starter-security'
 	implementation 'org.springframework.boot:spring-boot-starter-webmvc'
 	implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.0.2'
+	// JWT library (JJWT)
+	implementation 'io.jsonwebtoken:jjwt-api:0.12.3'
+	runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.12.3'
+	runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.12.3'
 	compileOnly 'org.projectlombok:lombok'
 	runtimeOnly 'org.postgresql:postgresql'
+	implementation("org.springframework.boot:spring-boot-starter-flyway:4.0.1")
+	implementation("org.flywaydb:flyway-database-postgresql")
 	annotationProcessor 'org.projectlombok:lombok'
 	testImplementation 'org.springframework.boot:spring-boot-starter-actuator-test'
 	testImplementation 'org.springframework.boot:spring-boot-starter-data-jpa-test'
@@ -34,6 +48,12 @@ dependencies {
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 	testAnnotationProcessor 'org.projectlombok:lombok'
 }
+
+// Read from system environment or fallback to local defaults for convenience
+def dbUrl = System.getenv('DB_URL') ?: 'jdbc:postgresql://localhost:54321/tenantos_registrar'
+def dbUser = System.getenv('DB_USERNAME') ?: 'tenantos_registrar'
+def dbPassword = System.getenv('DB_PASSWORD') ?: 'c4rl0sP@ssw0rds'
+
 
 tasks.named('test') {
 	useJUnitPlatform()
