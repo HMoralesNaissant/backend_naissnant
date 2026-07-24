@@ -1,0 +1,165 @@
+package com.tenantos.registrar.services;
+
+import com.tenantos.registrar.entity.Onboarding;
+import com.tenantos.registrar.entity.TenantsRegistration;
+import com.tenantos.registrar.repository.OnboardingRepository;
+import com.tenantos.registrar.repository.TenantsRegistrationRepository;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.security.crypto.password.PasswordEncoder;
+
+import java.util.Optional;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+@ExtendWith(MockitoExtension.class)
+class OnboardingServiceTest {
+
+    @Mock
+    private TenantsRegistrationRepository repository;
+    @Mock
+    private OnboardingRepository onboardingRepository;
+    @Mock
+    private PasswordEncoder passwordEncoder;
+
+    @Mock
+    private OtpEmailService otpEmailService;
+
+    @InjectMocks
+    private OnboardingService service;
+
+    @Test
+    void onboardUser_throwsIllegalArgument_whenCompanyEmailIsNull() {
+        Onboarding onboarding = Onboarding.builder().companyEmail(null).build();
+
+        assertThatThrownBy(() -> service.onboardUser(onboarding))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("companyEmail is required");
+
+        verify(otpEmailService, never()).generateAndSend(any());
+    }
+
+    @Test
+    void onboardUser_throwsIllegalArgument_whenCompanyEmailIsBlank() {
+        Onboarding onboarding = Onboarding.builder().companyEmail("   ").build();
+
+        assertThatThrownBy(() -> service.onboardUser(onboarding))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void onboardUser_throwsDataIntegrityViolation_whenCompanyEmailAlreadyExists() {
+        Onboarding onboarding = Onboarding.builder().companyEmail("dup@example.com").build();
+        when(repository.existsById("dup@example.com")).thenReturn(true);
+
+        assertThatThrownBy(() -> service.onboardUser(onboarding))
+                .isInstanceOf(DataIntegrityViolationException.class);
+
+        verify(repository, never()).save(any());
+        verify(otpEmailService, never()).generateAndSend(any());
+    }
+
+    @Test
+    void onboardUser_overwritesClientSuppliedStatusAndOtpDetails_regardlessOfInput() {
+        Onboarding onboarding = Onboarding.builder()
+                .companyEmail("new@example.com")
+                .status("completed") // attempted tamper
+                .otpDetails("{\"hacked\":true}") // attempted tamper
+                .build();
+        when(repository.existsById("new@example.com")).thenReturn(false);
+        when(onboardingRepository.save(any(Onboarding.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        Onboarding saved = service.onboardUser(onboarding);
+
+        assertThat(saved.getStatus()).isEqualTo("otp-validation");
+        assertThat(saved.getOtpDetails()).isEqualTo("{}");
+    }
+
+    @Test
+    void onboardUser_savesThenTriggersOtpEmail_withTheSavedEntity() {
+        Onboarding onboarding = Onboarding.builder().companyEmail("new@example.com").build();
+        Onboarding persisted = Onboarding.builder().companyEmail("new@example.com").status("otp-validation").build();
+        when(repository.existsById("new@example.com")).thenReturn(false);
+        when(onboardingRepository.save(any(Onboarding.class))).thenReturn(persisted);
+
+        Onboarding result = service.onboardUser(onboarding);
+
+        assertThat(result).isSameAs(persisted);
+        ArgumentCaptor<Onboarding> captor = ArgumentCaptor.forClass(Onboarding.class);
+        verify(otpEmailService).generateAndSend(captor.capture());
+        assertThat(captor.getValue()).isSameAs(persisted);
+    }
+
+
+    @Test
+    void register_throwsIllegalArgument_whenNoOnboardingRecordExists() {
+        when(onboardingRepository.findById("a@example.com")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.register(command()))
+                .isInstanceOf(IllegalArgumentException.class);
+
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    void register_throwsIllegalState_whenOnboardingNotYetVerified() {
+        Onboarding onboarding = Onboarding.builder().companyEmail("a@example.com").status("otp-validation").build();
+        when(onboardingRepository.findById("a@example.com")).thenReturn(Optional.of(onboarding));
+
+        assertThatThrownBy(() -> service.register(command()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("not yet verified");
+
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    void register_throwsDataIntegrityViolation_whenAlreadyRegistered() {
+        Onboarding onboarding = Onboarding.builder().companyEmail("a@example.com").status("active").build();
+        when(onboardingRepository.findById("a@example.com")).thenReturn(Optional.of(onboarding));
+        when(repository.existsById("a@example.com")).thenReturn(true);
+
+        assertThatThrownBy(() -> service.register(command()))
+                .isInstanceOf(DataIntegrityViolationException.class);
+
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    void register_neverPersistsTheRawPassword_andMarksOnboardingCompleted() {
+        Onboarding onboarding = Onboarding.builder().companyEmail("a@example.com").status("active").build();
+        when(onboardingRepository.findById("a@example.com")).thenReturn(Optional.of(onboarding));
+        when(repository.existsById("a@example.com")).thenReturn(false);
+        when(passwordEncoder.encode("raw-password")).thenReturn("bcrypt-hash");
+        when(repository.save(any(TenantsRegistration.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        TenantsRegistration saved = service.register(command());
+
+        assertThat(saved.getPassword()).isEqualTo("bcrypt-hash");
+        assertThat(saved.getPassword()).isNotEqualTo("raw-password");
+        assertThat(saved.getCompanyEmail()).isEqualTo("a@example.com");
+        assertThat(saved.getFullName()).isEqualTo("Full Name");
+        assertThat(saved.getAccountName()).isEqualTo("acme");
+
+        assertThat(onboarding.getStatus()).isEqualTo("completed");
+        ArgumentCaptor<Onboarding> onboardingCaptor = ArgumentCaptor.forClass(Onboarding.class);
+        verify(onboardingRepository).save(onboardingCaptor.capture());
+        assertThat(onboardingCaptor.getValue()).isSameAs(onboarding);
+    }
+
+    private static OnboardingService.RegistrationCommand command() {
+        return new OnboardingService.RegistrationCommand(
+                "a@example.com", "Full Name", "raw-password", "acme");
+    }
+
+}

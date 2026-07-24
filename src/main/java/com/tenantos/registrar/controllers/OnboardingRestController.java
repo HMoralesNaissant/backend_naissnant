@@ -8,9 +8,9 @@ import com.tenantos.registrar.entity.Onboarding;
 import com.tenantos.registrar.entity.TenantsRegistration;
 import com.tenantos.registrar.services.OnboardingService;
 import com.tenantos.registrar.services.OnboardingTokenService;
-import com.tenantos.registrar.services.TenantsRegistrationService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseCookie;
@@ -34,19 +34,11 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/onboarding")
+@RequiredArgsConstructor
 public class OnboardingRestController {
 
     private final OnboardingService onboardingService;
     private final OnboardingTokenService onboardingTokenService;
-    private final TenantsRegistrationService tenantsRegistrationService;
-
-    public OnboardingRestController(OnboardingService onboardingService,
-                                     OnboardingTokenService onboardingTokenService,
-                                     TenantsRegistrationService tenantsRegistrationService) {
-        this.onboardingService = onboardingService;
-        this.onboardingTokenService = onboardingTokenService;
-        this.tenantsRegistrationService = tenantsRegistrationService;
-    }
 
     @Operation(summary = "Issue a preflight onboarding token",
             description = "Call once when the onboarding page loads (GET so it's exempt from CSRF, " +
@@ -77,17 +69,6 @@ public class OnboardingRestController {
         return ResponseEntity.ok(Map.of("expiresInSeconds", ttlSeconds));
     }
 
-    private Map<String, Object> getUserClientDetails(HttpServletRequest request) {
-        Map<String, Object> clientDetails = new LinkedHashMap<>();
-        String ipAddress = request.getRemoteAddr();
-        String userAgent = request.getHeader("User-Agent");
-        String acceptLanguage = request.getHeader("Accept-Language");
-
-        if (ipAddress != null) clientDetails.put("ipAddress", ipAddress);
-        if (userAgent != null) clientDetails.put("userAgent", userAgent);
-        if (acceptLanguage != null) clientDetails.put("acceptLanguage", acceptLanguage);
-        return clientDetails;
-    }
 
     @Operation(summary = "Create onboarding event", description = "Creates an onboarding record for a company, " +
             "emails an OTP verification code, and never returns it. Ensures uniqueness per company_email. " +
@@ -141,7 +122,7 @@ public class OnboardingRestController {
     })
     @PostMapping("/account-registration")
     public ResponseEntity<?> registerAccount(@Valid @RequestBody AccountRegistrationRequest request, HttpServletRequest servletRequest) {
-        TenantsRegistration saved = tenantsRegistrationService.register(new TenantsRegistrationService.RegistrationCommand(
+        TenantsRegistration saved = onboardingService.register(new OnboardingService.RegistrationCommand(
                 request.companyEmail(), request.fullName(), request.password(), request.accountName()));
 
         // Funnel's single-use burn point - only once registration actually succeeds.
@@ -157,4 +138,17 @@ public class OnboardingRestController {
         return ResponseEntity.status(HttpStatus.CREATED).body(new AccountRegistrationResponse(
                 saved.getCompanyEmail(), saved.getFullName(), saved.getAccountName(), saved.getStatus()));
     }
+
+    private Map<String, Object> getUserClientDetails(HttpServletRequest request) {
+        Map<String, Object> clientDetails = new LinkedHashMap<>();
+        String ipAddress = request.getRemoteAddr();
+        String userAgent = request.getHeader("User-Agent");
+        String acceptLanguage = request.getHeader("Accept-Language");
+
+        if (ipAddress != null) clientDetails.put("ipAddress", ipAddress);
+        if (userAgent != null) clientDetails.put("userAgent", userAgent);
+        if (acceptLanguage != null) clientDetails.put("acceptLanguage", acceptLanguage);
+        return clientDetails;
+    }
+
 }

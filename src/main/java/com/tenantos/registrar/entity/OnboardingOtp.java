@@ -10,6 +10,7 @@ import lombok.Builder.Default;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.springframework.context.annotation.Primary;
 
 import java.time.Instant;
 
@@ -27,6 +28,9 @@ import java.time.Instant;
 public class OnboardingOtp {
 
     @Id
+    @Column(name = "otp_id", length = 200, nullable = false)
+    private String otpId;
+
     @Column(name = "company_email", length = 200, nullable = false)
     private String companyEmail;
 

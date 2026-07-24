@@ -15,6 +15,7 @@ import com.tenantos.registrar.security.HashUtils;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.Getter;
+import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -31,6 +32,7 @@ import java.util.Map;
  * ROLE_USER or access outside the /onboarding path.
  */
 @Service
+@RequiredArgsConstructor
 public class OnboardingTokenService {
 
     @Value("${fe.onboarding.session-token-cookie-name:onboarding_token}")
@@ -44,25 +46,14 @@ public class OnboardingTokenService {
     @Value("${fe.onboarding.otp-max-attempts:5}")
     private int otpMaxAttempts;
 
-    private final OnboardingTokenRepository repository;
+
+    private final OnboardingTokenRepository tokenRepository;
     private final OnboardingTokenRequestRepository requestRepository;
     private final OnboardingOtpRepository otpRepository;
     private final OnboardingRepository onboardingRepository;
     private final OtpAttemptTracker otpAttemptTracker;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final SecureRandom secureRandom = new SecureRandom();
-
-    public OnboardingTokenService(OnboardingTokenRepository repository,
-                                   OnboardingTokenRequestRepository requestRepository,
-                                   OnboardingOtpRepository otpRepository,
-                                   OnboardingRepository onboardingRepository,
-                                   OtpAttemptTracker otpAttemptTracker) {
-        this.repository = repository;
-        this.requestRepository = requestRepository;
-        this.otpRepository = otpRepository;
-        this.onboardingRepository = onboardingRepository;
-        this.otpAttemptTracker = otpAttemptTracker;
-    }
 
     /**
      * Input to validateOtp - the service defines its own command type rather than
@@ -88,7 +79,7 @@ public class OnboardingTokenService {
                 .createdAt(now)
                 .expiresAt(now.plusSeconds(ttlSeconds))
                 .build();
-        repository.save(token);
+        tokenRepository.save(token);
 
         OnboardingTokenRequest request = OnboardingTokenRequest.builder()
                 .tokenHash(tokenHash)
@@ -105,7 +96,7 @@ public class OnboardingTokenService {
         if (rawToken == null || rawToken.isBlank()) {
             throw new InvalidOnboardingTokenException("Missing onboarding token");
         }
-        int updated = repository.consume(hash(rawToken), Instant.now());
+        int updated = tokenRepository.consume(hash(rawToken), Instant.now());
         if (updated != 1) {
             throw new InvalidOnboardingTokenException("Onboarding token is invalid, expired, or already used");
         }
@@ -169,7 +160,7 @@ public class OnboardingTokenService {
             return false;
         }
         Instant now = Instant.now();
-        return repository.findById(hash(rawToken))
+        return tokenRepository.findById(hash(rawToken))
                 .filter(token -> token.getUsedAt() == null && token.getExpiresAt().isAfter(now))
                 .isPresent();
     }
