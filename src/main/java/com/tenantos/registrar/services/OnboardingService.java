@@ -1,6 +1,5 @@
 package com.tenantos.registrar.services;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tenantos.registrar.entity.Onboarding;
 import com.tenantos.registrar.entity.OnboardingOtp;
 import com.tenantos.registrar.entity.TenantsRegistration;
@@ -14,7 +13,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.security.SecureRandom;
+import java.time.Instant;
 
 @Service
 @RequiredArgsConstructor
@@ -28,11 +27,10 @@ public class OnboardingService {
   @Getter
   private long ttlSeconds;
 
-  private final TenantsRegistrationRepository repository;
+  private final TenantsRegistrationRepository tenantsRegistrationRepository;
   private final OnboardingRepository onboardingRepository;
   private final OnboardingOtpRepository onboardingOtpRepository;
   private final PasswordEncoder passwordEncoder;
-
   private final OtpEmailService otpEmailService;
 
   /**
@@ -49,12 +47,15 @@ public class OnboardingService {
       throw new IllegalArgumentException("companyEmail is required");
     }
 
-    if (repository.existsById(onboarding.getCompanyEmail())) {
+    if (tenantsRegistrationRepository.existsById(onboarding.getCompanyEmail())) {
       throw new DataIntegrityViolationException(
           String.format(
               "An onboarding event already processed for this company_email %s",
               onboarding.getCompanyEmail()));
     }
+
+    // Invalidate previous otp codes.
+    onboardingOtpRepository.markInvalidated(onboarding.getCompanyEmail(), Instant.now());
 
     // status/otpDetails are server-controlled, never trusted from the caller
     onboarding.setStatus("pending");
@@ -104,13 +105,13 @@ public class OnboardingService {
     if (!"otp-validated".equals(onboarding.getStatus())) {
       throw new IllegalStateException("Onboarding is not yet verified for this company_email");
     }
-    if (repository.existsById(command.companyEmail())) {
+    if (tenantsRegistrationRepository.existsById(command.companyEmail())) {
       throw new DataIntegrityViolationException(
           "An account is already registered for this company_email");
     }
 
     TenantsRegistration saved =
-        repository.save(
+        tenantsRegistrationRepository.save(
             TenantsRegistration.builder()
                 .companyEmail(command.companyEmail())
                 .fullName(command.fullName())

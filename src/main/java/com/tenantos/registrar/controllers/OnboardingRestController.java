@@ -3,10 +3,12 @@ package com.tenantos.registrar.controllers;
 import com.tenantos.registrar.domain.request.AccountRegistrationRequest;
 import com.tenantos.registrar.domain.request.OnboardingRequest;
 import com.tenantos.registrar.domain.request.OtpValidationRequest;
+import com.tenantos.registrar.domain.request.ResendCodeRequest;
 import com.tenantos.registrar.domain.response.AccountRegistrationResponse;
 import com.tenantos.registrar.domain.response.ValidateOtpResponse;
 import com.tenantos.registrar.entity.Onboarding;
 import com.tenantos.registrar.entity.TenantsRegistration;
+import com.tenantos.registrar.services.OnboardingOnFlightTokenService;
 import com.tenantos.registrar.services.OnboardingService;
 import com.tenantos.registrar.services.OnboardingOtpService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -40,6 +42,7 @@ public class OnboardingRestController {
 
   private final OnboardingService onboardingService;
   private final OnboardingOtpService onboardingTokenService;
+  private final OnboardingOnFlightTokenService onboardingOnFlightTokenService;
 
   @Operation(
       summary = "Issue a preflight onboarding token",
@@ -52,11 +55,11 @@ public class OnboardingRestController {
   @GetMapping("/token")
   public ResponseEntity<?> issueToken(HttpServletRequest request, HttpServletResponse response) {
     Map<String, Object> userClientDetails = this.getUserClientDetails(request);
-    String rawToken = onboardingTokenService.issue(userClientDetails);
-    long ttlSeconds = onboardingTokenService.getTtlSeconds();
+    String rawToken = onboardingOnFlightTokenService.issue(userClientDetails);
+    long ttlSeconds = onboardingOnFlightTokenService.getTtlSeconds();
 
     ResponseCookie cookie =
-        ResponseCookie.from(onboardingTokenService.getOnboardingSessionTokenCookieName(), rawToken)
+        ResponseCookie.from(onboardingOnFlightTokenService.getOnboardingSessionTokenCookieName(), rawToken)
             .httpOnly(true)
             .secure(request.isSecure())
             .sameSite("Lax")
@@ -117,6 +120,8 @@ public class OnboardingRestController {
     return ResponseEntity.status(HttpStatus.CREATED).body(saved);
   }
 
+
+
   @Operation(
       summary = "Validate the emailed OTP code",
       description =
@@ -142,6 +147,36 @@ public class OnboardingRestController {
         onboardingTokenService.validateOtp(
             new OnboardingOtpService.OtpValidationCommand(
                 request.companyEmail(), type, request.code())));
+  }
+
+  @Operation(
+      summary = "Resend the OTP code",
+      description =
+          "Invalidates any previously issued OTP code and emails a new one for the "
+              + "onboarding record identified by companyEmail, matching {type} against the "
+              + "record's otpType.")
+  @ApiResponses(
+      value = {
+        @ApiResponse(responseCode = "200", description = "Resent", content = @Content),
+        @ApiResponse(
+            responseCode = "400",
+            description = "Bad Request - no onboarding record for company_email, or otpType mismatch",
+            content = @Content),
+        @ApiResponse(
+            responseCode = "403",
+            description = "Forbidden - missing, invalid, or expired onboarding token",
+            content = @Content),
+        @ApiResponse(
+            responseCode = "409",
+            description = "Conflict - already registered for company_email",
+            content = @Content)
+      })
+  @PostMapping("/{type}/resend")
+  public ResponseEntity<?> resendCode(
+      @PathVariable String type, @Valid @RequestBody ResendCodeRequest request) {
+    onboardingTokenService.resendCode(
+        new OnboardingOtpService.ResendCodeCommand(request.companyEmail(), type));
+    return ResponseEntity.ok().build();
   }
 
   @Operation(
@@ -188,8 +223,8 @@ public class OnboardingRestController {
     // /onboarding can't recreate it, and the old cookie would already be dead.
     // TenantsRegistrationRepository's unique company_email already guards against a
     // genuine double-submit race creating two rows, so consuming late costs nothing.
-    String onboardingToken = onboardingTokenService.extractToken(servletRequest);
-    onboardingTokenService.validateAndConsume(onboardingToken);
+    String onboardingToken = onboardingOnFlightTokenService.extractToken(servletRequest);
+    onboardingOnFlightTokenService.validateAndConsume(onboardingToken);
 
     return ResponseEntity.status(HttpStatus.CREATED)
         .body(

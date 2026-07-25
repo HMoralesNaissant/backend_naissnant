@@ -86,7 +86,7 @@ class OnboardingServiceTest {
 
         Onboarding saved = service.onboardUser(onboarding);
 
-        assertThat(saved.getStatus()).isEqualTo("otp-validation");
+        assertThat(saved.getStatus()).isEqualTo("pending");
         assertThat(saved.getOtpDetails()).isEqualTo("{}");
     }
 
@@ -132,7 +132,7 @@ class OnboardingServiceTest {
 
     @Test
     void register_throwsDataIntegrityViolation_whenAlreadyRegistered() {
-        Onboarding onboarding = Onboarding.builder().companyEmail("a@example.com").status("active").build();
+        Onboarding onboarding = Onboarding.builder().companyEmail("a@example.com").status("otp-validated").build();
         when(onboardingRepository.findById("a@example.com")).thenReturn(Optional.of(onboarding));
         when(onboardingOtpRepository.findByOtpIdAndCompanyEmail("vrfk-token", "a@example.com"))
                 .thenReturn(Optional.of(validatedOtp()));
@@ -174,7 +174,7 @@ class OnboardingServiceTest {
 
     @Test
     void register_neverPersistsTheRawPassword_andMarksOnboardingCompleted() {
-        Onboarding onboarding = Onboarding.builder().companyEmail("a@example.com").status("active").build();
+        Onboarding onboarding = Onboarding.builder().companyEmail("a@example.com").status("otp-validated").build();
         when(onboardingRepository.findById("a@example.com")).thenReturn(Optional.of(onboarding));
         when(onboardingOtpRepository.findByOtpIdAndCompanyEmail("vrfk-token", "a@example.com"))
                 .thenReturn(Optional.of(validatedOtp()));

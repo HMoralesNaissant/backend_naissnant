@@ -34,7 +34,7 @@ import static org.mockito.Mockito.when;
 class OtpEmailServiceTest {
 
   private static final String VERIFY_URL_TEMPLATE =
-      "http://localhost:3000/onboarding/verify?email={email}&code={code}";
+      "http://localhost:3000/onboarding/verify?email={email}&vftk={vftk}";
 
   @Mock private OnboardingOtpRepository repository;
   @Mock private JavaMailSender mailSender;
@@ -90,7 +90,8 @@ class OtpEmailServiceTest {
     String verifyUrl = (String) contextCaptor.getValue().getVariable("verifyUrl");
     assertThat(verifyUrl)
         .isEqualTo(
-            "http://localhost:3000/onboarding/verify?email=a%40example.com&code=" + emailedCode);
+            "http://localhost:3000/onboarding/verify?email=a%40example.com&vftk="
+                + savedOtp.getOtpId());
   }
 
   @Test

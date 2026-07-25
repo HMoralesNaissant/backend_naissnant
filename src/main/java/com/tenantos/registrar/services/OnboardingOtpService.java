@@ -1,28 +1,21 @@
 package com.tenantos.registrar.services;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tenantos.registrar.domain.response.ValidateOtpResponse;
 import com.tenantos.registrar.entity.Onboarding;
 import com.tenantos.registrar.entity.OnboardingOtp;
-import com.tenantos.registrar.entity.OnboardingToken;
-import com.tenantos.registrar.exceptions.InvalidOnboardingTokenException;
 import com.tenantos.registrar.exceptions.InvalidOtpException;
 import com.tenantos.registrar.repository.OnboardingOtpRepository;
 import com.tenantos.registrar.repository.OnboardingRepository;
 import com.tenantos.registrar.repository.OnboardingTokenRepository;
+import com.tenantos.registrar.repository.TenantsRegistrationRepository;
 import com.tenantos.registrar.utils.HashUtils;
-import jakarta.servlet.http.Cookie;
-import jakarta.servlet.http.HttpServletRequest;
-import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.security.SecureRandom;
 import java.time.Instant;
-import java.util.Base64;
-import java.util.Map;
 
 /**
  * Issues and consumes short-lived, single-use preflight tokens that gate every endpoint under
@@ -34,64 +27,21 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class OnboardingOtpService {
 
-  @Value("${fe.onboarding.session-token-cookie-name}")
-  @Getter
-  private String onboardingSessionTokenCookieName;
-
-  @Value("${fe.onboarding.token-ttl-seconds}")
-  @Getter
-  private long ttlSeconds;
-
   @Value("${fe.onboarding.otp-max-attempts}")
   private int otpMaxAttempts;
 
-  private final OnboardingTokenRepository tokenRepository;
+  private final OnboardingTokenRepository onboardingTokenRepository;
   private final OnboardingOtpRepository otpRepository;
   private final OnboardingRepository onboardingRepository;
+  private final TenantsRegistrationRepository tenantsRegistrationRepository;
   private final OtpAttemptTracker otpAttemptTracker;
-  private final ObjectMapper objectMapper = new ObjectMapper();
-  private final SecureRandom secureRandom = new SecureRandom();
+  private final OtpEmailService otpEmailService;
 
   /**
    * Input to validateOtp - the service defines its own command type rather than taking
    * companyEmail/type/code as three positional strings.
    */
   public record OtpValidationCommand(String companyEmail, String type, String code) {}
-
-  /**
-   * Issues a new preflight token and logs the requesting client's browser details (whatever's
-   * non-null) as a JSON blob, so new fields can be captured later without a schema change.
-   */
-  @Transactional
-  public String issue(Map<String, Object> clientDetails) {
-    byte[] raw = new byte[32];
-    secureRandom.nextBytes(raw);
-    String rawToken = Base64.getUrlEncoder().withoutPadding().encodeToString(raw);
-    String tokenHash = hash(rawToken);
-
-    Instant now = Instant.now();
-    OnboardingToken token =
-        OnboardingToken.builder()
-            .tokenHash(tokenHash)
-            .clientDetails(toJson(clientDetails))
-            .expiresAt(now.plusSeconds(ttlSeconds))
-            .build();
-    tokenRepository.save(token);
-
-    return rawToken;
-  }
-
-  @Transactional
-  public void validateAndConsume(String rawToken) {
-    if (rawToken == null || rawToken.isBlank()) {
-      throw new InvalidOnboardingTokenException("Missing onboarding token");
-    }
-    int updated = tokenRepository.consume(hash(rawToken), Instant.now());
-    if (updated != 1) {
-      throw new InvalidOnboardingTokenException(
-          "Onboarding token is invalid, expired, or already used");
-    }
-  }
 
   /**
    * Validates the OTP code emailed during onboarding (see OtpEmailService). Distinct from the
@@ -146,46 +96,44 @@ public class OnboardingOtpService {
   }
 
   /**
-   * Read-only check used by OnboardingTokenAuthenticationFilter to gate every request under
-   * /onboarding. Deliberately doesn't consume the token — burning it on the actual write happens
-   * via validateAndConsume, so a non-mutating endpoint checked only by this method (if one is ever
-   * added under /onboarding) can't drain it.
+   * Input to resendCode - mirrors OtpValidationCommand, combining the body's companyEmail with
+   * the {type} path variable.
    */
-  @Transactional(readOnly = true)
-  public boolean isValid(String rawToken) {
-    if (rawToken == null || rawToken.isBlank()) {
-      return false;
-    }
-    Instant now = Instant.now();
-    return tokenRepository
-        .findById(hash(rawToken))
-        .filter(token -> token.getUsedAt() == null && token.getExpiresAt().isAfter(now))
-        .isPresent();
-  }
+  public record ResendCodeCommand(String companyEmail, String type) {}
 
   /**
-   * Shared cookie-extraction logic so the configurable cookie name only lives here, not duplicated
-   * across the controller and OnboardingTokenAuthenticationFilter.
+   * Resends the OTP code for an existing, not-yet-registered onboarding record. Invalidates any
+   * previously issued code first, same as the initial send in OnboardingService.onboardUser, so a
+   * stale code can never be replayed after a resend.
    */
-  public String extractToken(HttpServletRequest request) {
-    Cookie[] cookies = request.getCookies();
-    if (cookies == null) {
-      return null;
+  @Transactional
+  public boolean resendCode(ResendCodeCommand command) {
+    if (command.companyEmail() == null || command.companyEmail().isBlank()) {
+      throw new IllegalArgumentException("companyEmail is required");
     }
-    for (Cookie cookie : cookies) {
-      if (onboardingSessionTokenCookieName.equals(cookie.getName())) {
-        return cookie.getValue();
-      }
-    }
-    return null;
-  }
 
-  private String toJson(Map<String, Object> clientDetails) {
-    try {
-      return objectMapper.writeValueAsString(clientDetails);
-    } catch (Exception e) {
-      return "{}";
+    if (tenantsRegistrationRepository.existsById(command.companyEmail())) {
+      throw new DataIntegrityViolationException(
+          String.format(
+              "An onboarding event already processed for this company_email %s",
+              command.companyEmail()));
     }
+
+    Onboarding onboarding =
+        onboardingRepository
+            .findById(command.companyEmail())
+            .orElseThrow(
+                () ->
+                    new IllegalArgumentException(
+                        "No onboarding record for this company_email, cannot resend code"));
+
+    if (!onboarding.getOtpType().equals(command.type())) {
+      throw new InvalidOtpException("otpType mismatch for this company_email");
+    }
+
+    otpRepository.markInvalidated(command.companyEmail(), Instant.now());
+    otpEmailService.generateAndSend(onboarding);
+    return true;
   }
 
   private static String hash(String rawToken) {

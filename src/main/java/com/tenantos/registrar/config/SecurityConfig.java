@@ -6,7 +6,9 @@ import java.util.Map;
 
 import com.tenantos.registrar.security.OnboardingTokenAuthenticationFilter;
 import com.tenantos.registrar.security.RateLimitFilter;
+import com.tenantos.registrar.services.OnboardingOnFlightTokenService;
 import com.tenantos.registrar.services.OnboardingOtpService;
+import com.tenantos.registrar.services.OnboardingService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -58,7 +60,7 @@ public class SecurityConfig {
   @Bean
   public SecurityFilterChain securityFilterChain(
       HttpSecurity http,
-      OnboardingOtpService onboardingTokenService,
+      OnboardingOnFlightTokenService onboardingOnFlightTokenService,
       RateLimitProperties rateLimitProperties) {
     http.cors(cors -> {})
         .csrf(AbstractHttpConfigurer::disable)
@@ -96,7 +98,7 @@ public class SecurityConfig {
           CorsFilter.class);
     }
     http.addFilterBefore(
-        new OnboardingTokenAuthenticationFilter(onboardingTokenService), CorsFilter.class);
+        new OnboardingTokenAuthenticationFilter(onboardingOnFlightTokenService), CorsFilter.class);
 
     return http.build();
   }

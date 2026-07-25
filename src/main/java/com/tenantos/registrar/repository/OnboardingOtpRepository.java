@@ -34,4 +34,9 @@ public interface OnboardingOtpRepository extends JpaRepository<OnboardingOtp, St
     @Query("update OnboardingOtp o set o.status = 'validated', o.validatedAt = :now " +
             "where o.companyEmail = :email and o.status = 'created'")
     int markValidated(@Param("email") String email, @Param("now") Instant now);
+
+    @Modifying
+    @Query("update OnboardingOtp o set o.status = 'invalidated', o.validatedAt = :now " +
+            "where o.companyEmail = :email and o.status = 'created'")
+    void markInvalidated(@Param("email") String email, @Param("now") Instant now);
 }

@@ -3,9 +3,11 @@ package com.tenantos.registrar.controllers;
 import com.tenantos.registrar.domain.request.AccountRegistrationRequest;
 import com.tenantos.registrar.domain.request.OnboardingRequest;
 import com.tenantos.registrar.domain.request.OtpValidationRequest;
+import com.tenantos.registrar.domain.request.ResendCodeRequest;
 import com.tenantos.registrar.domain.response.AccountRegistrationResponse;
 import com.tenantos.registrar.entity.Onboarding;
 import com.tenantos.registrar.entity.TenantsRegistration;
+import com.tenantos.registrar.services.OnboardingOnFlightTokenService;
 import com.tenantos.registrar.services.OnboardingService;
 import com.tenantos.registrar.services.OnboardingService.RegistrationCommand;
 import com.tenantos.registrar.services.OnboardingOtpService;
@@ -35,118 +37,130 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class OnboardingRestControllerTest {
 
-    @Mock
-    private OnboardingService onboardingService;
-    @Mock
-    private OnboardingOtpService onboardingTokenService;
+  @Mock private OnboardingService onboardingService;
+  @Mock private OnboardingOnFlightTokenService onboardingOnFlightTokenService;
+  @Mock private OnboardingOtpService onboardingTokenService;
 
-    @InjectMocks
-    private OnboardingRestController controller;
+  @InjectMocks private OnboardingRestController controller;
 
-    @Test
-    void issueToken_setsCookieHeader_andReturnsTtlBody() {
-        HttpServletRequest request = mock(HttpServletRequest.class);
-        HttpServletResponse response = mock(HttpServletResponse.class);
-        when(request.getRemoteAddr()).thenReturn("127.0.0.1");
-        when(request.getHeader("User-Agent")).thenReturn("test-agent");
-        when(request.getHeader("Accept-Language")).thenReturn("en-US");
-        when(request.isSecure()).thenReturn(false);
-        when(onboardingTokenService.issue(any())).thenReturn("raw-token-value");
-        when(onboardingTokenService.getTtlSeconds()).thenReturn(900L);
-        when(onboardingTokenService.getOnboardingSessionTokenCookieName()).thenReturn("onboarding_token");
+  @Test
+  void issueToken_setsCookieHeader_andReturnsTtlBody() {
+    HttpServletRequest request = mock(HttpServletRequest.class);
+    HttpServletResponse response = mock(HttpServletResponse.class);
+    when(request.getRemoteAddr()).thenReturn("127.0.0.1");
+    when(request.getHeader("User-Agent")).thenReturn("test-agent");
+    when(request.getHeader("Accept-Language")).thenReturn("en-US");
+    when(request.isSecure()).thenReturn(false);
+    when(onboardingOnFlightTokenService.issue(any())).thenReturn("raw-token-value");
+    when(onboardingOnFlightTokenService.getTtlSeconds()).thenReturn(900L);
+    when(onboardingOnFlightTokenService.getOnboardingSessionTokenCookieName())
+        .thenReturn("onboarding_token");
 
-        ResponseEntity<?> result = controller.issueToken(request, response);
+    ResponseEntity<?> result = controller.issueToken(request, response);
 
-        assertThat(result.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(result.getBody()).isEqualTo(java.util.Map.of("expiresInSeconds", 900L));
+    assertThat(result.getStatusCode()).isEqualTo(HttpStatus.OK);
+    assertThat(result.getBody()).isEqualTo(java.util.Map.of("expiresInSeconds", 900L));
 
-        ArgumentCaptor<String> cookieHeader = ArgumentCaptor.forClass(String.class);
-        verify(response).addHeader(eq(HttpHeaders.SET_COOKIE), cookieHeader.capture());
-        assertThat(cookieHeader.getValue())
-                .contains("onboarding_token=raw-token-value")
-                .contains("HttpOnly");
-    }
+    ArgumentCaptor<String> cookieHeader = ArgumentCaptor.forClass(String.class);
+    verify(response).addHeader(eq(HttpHeaders.SET_COOKIE), cookieHeader.capture());
+    assertThat(cookieHeader.getValue())
+        .contains("onboarding_token=raw-token-value")
+        .contains("HttpOnly");
+  }
 
-    @Test
-    void onboardUser_defaultsOtpTypeToCode_whenNotProvided() {
-        OnboardingRequest request = new OnboardingRequest("a@example.com", null);
-        Onboarding saved = Onboarding.builder().companyEmail("a@example.com").otpType("code").build();
-        when(onboardingService.onboardUser(any(Onboarding.class))).thenReturn(saved);
+  @Test
+  void onboardUser_defaultsOtpTypeToCode_whenNotProvided() {
+    OnboardingRequest request = new OnboardingRequest("a@example.com", null);
+    Onboarding saved = Onboarding.builder().companyEmail("a@example.com").otpType("code").build();
+    when(onboardingService.onboardUser(any(Onboarding.class))).thenReturn(saved);
 
-        ResponseEntity<?> result = controller.onboardUser(request);
+    ResponseEntity<?> result = controller.onboardUser(request);
 
-        assertThat(result.getStatusCode()).isEqualTo(HttpStatus.CREATED);
-        assertThat(result.getBody()).isSameAs(saved);
+    assertThat(result.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+    assertThat(result.getBody()).isSameAs(saved);
 
-        ArgumentCaptor<Onboarding> captor = ArgumentCaptor.forClass(Onboarding.class);
-        verify(onboardingService).onboardUser(captor.capture());
-        assertThat(captor.getValue().getOtpType()).isEqualTo("code");
-    }
+    ArgumentCaptor<Onboarding> captor = ArgumentCaptor.forClass(Onboarding.class);
+    verify(onboardingService).onboardUser(captor.capture());
+    assertThat(captor.getValue().getOtpType()).isEqualTo("code");
+  }
 
-    @Test
-    void onboardUser_passesThroughCallerSuppliedOtpType() {
-        OnboardingRequest request = new OnboardingRequest("a@example.com", "sms");
-        when(onboardingService.onboardUser(any(Onboarding.class)))
-                .thenAnswer(invocation -> invocation.getArgument(0));
+  @Test
+  void onboardUser_passesThroughCallerSuppliedOtpType() {
+    OnboardingRequest request = new OnboardingRequest("a@example.com", "sms");
+    when(onboardingService.onboardUser(any(Onboarding.class)))
+        .thenAnswer(invocation -> invocation.getArgument(0));
 
-        controller.onboardUser(request);
+    controller.onboardUser(request);
 
-        ArgumentCaptor<Onboarding> captor = ArgumentCaptor.forClass(Onboarding.class);
-        verify(onboardingService).onboardUser(captor.capture());
-        assertThat(captor.getValue().getOtpType()).isEqualTo("sms");
-    }
+    ArgumentCaptor<Onboarding> captor = ArgumentCaptor.forClass(Onboarding.class);
+    verify(onboardingService).onboardUser(captor.capture());
+    assertThat(captor.getValue().getOtpType()).isEqualTo("sms");
+  }
 
-    @Test
-    void validateOtp_mapsPathVariableAndBodyIntoOneCommand() {
-        OtpValidationRequest request = new OtpValidationRequest("a@example.com", "123456");
 
-        ResponseEntity<?> result = controller.validateOtp("code", request);
+  @Test
+  void resendCode_delegatesToOnboardingOtpService_withTypeFromPathAndEmailFromBody() {
+    ResendCodeRequest request = new ResendCodeRequest("a@example.com");
+    when(onboardingTokenService.resendCode(any())).thenReturn(true);
 
-        assertThat(result.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(result.getBody()).isEqualTo(java.util.Map.of("status", "verified"));
-        verify(onboardingTokenService).validateOtp(
-                new OnboardingOtpService.OtpValidationCommand("a@example.com", "code", "123456"));
-    }
+    ResponseEntity<?> result = controller.resendCode("code", request);
 
-    @Test
-    void registerAccount_burnsTokenOnlyAfterRegistrationSucceeds() {
-        // Regression coverage: burning the token before calling register() would mean a
-        // failed attempt (wrong state, already registered) permanently locks the user out,
-        // since a fresh GET /onboarding/token + POST /onboarding can't recreate the
-        // already-existing onboarding row. Fixed this session by reordering.
-        AccountRegistrationRequest request = new AccountRegistrationRequest(
-                "vrfk-token-value", "a@example.com", "Full Name", "password123", "acme");
-        HttpServletRequest servletRequest = mock(HttpServletRequest.class);
-        TenantsRegistration saved = TenantsRegistration.builder()
-                .companyEmail("a@example.com").fullName("Full Name")
-                .password("bcrypt-hash").accountName("acme").status("active").build();
-        when(onboardingService.register(any())).thenReturn(saved);
-        when(onboardingTokenService.extractToken(servletRequest)).thenReturn("raw-token");
+    assertThat(result.getStatusCode()).isEqualTo(HttpStatus.OK);
 
-        ResponseEntity<?> result = controller.registerAccount(request, servletRequest);
+    ArgumentCaptor<OnboardingOtpService.ResendCodeCommand> commandCaptor =
+        ArgumentCaptor.forClass(OnboardingOtpService.ResendCodeCommand.class);
+    verify(onboardingTokenService).resendCode(commandCaptor.capture());
+    assertThat(commandCaptor.getValue().companyEmail()).isEqualTo("a@example.com");
+    assertThat(commandCaptor.getValue().type()).isEqualTo("code");
+  }
 
-        assertThat(result.getStatusCode()).isEqualTo(HttpStatus.CREATED);
-        assertThat(result.getBody()).isEqualTo(new AccountRegistrationResponse(
-                "a@example.com", "Full Name", "acme", "active"));
+  @Test
+  void registerAccount_burnsTokenOnlyAfterRegistrationSucceeds() {
+    // Regression coverage: burning the token before calling register() would mean a
+    // failed attempt (wrong state, already registered) permanently locks the user out,
+    // since a fresh GET /onboarding/token + POST /onboarding can't recreate the
+    // already-existing onboarding row. Fixed this session by reordering.
+    AccountRegistrationRequest request =
+        new AccountRegistrationRequest(
+            "vrfk-token-value", "a@example.com", "Full Name", "password123", "acme");
+    HttpServletRequest servletRequest = mock(HttpServletRequest.class);
+    TenantsRegistration saved =
+        TenantsRegistration.builder()
+            .companyEmail("a@example.com")
+            .fullName("Full Name")
+            .password("bcrypt-hash")
+            .accountName("acme")
+            .status("active")
+            .build();
+    when(onboardingService.register(any())).thenReturn(saved);
+    when(onboardingOnFlightTokenService.extractToken(servletRequest)).thenReturn("raw-token");
 
-        ArgumentCaptor<RegistrationCommand> commandCaptor = ArgumentCaptor.forClass(RegistrationCommand.class);
-        InOrder order = inOrder(onboardingService, onboardingTokenService);
-        order.verify(onboardingService).register(commandCaptor.capture());
-        order.verify(onboardingTokenService).validateAndConsume("raw-token");
-        assertThat(commandCaptor.getValue().vrfkToken()).isEqualTo("vrfk-token-value");
-    }
+    ResponseEntity<?> result = controller.registerAccount(request, servletRequest);
 
-    @Test
-    void registerAccount_doesNotConsumeToken_whenRegistrationFails() {
-        AccountRegistrationRequest request = new AccountRegistrationRequest(
-                "vrfk-token-value", "a@example.com", "Full Name", "password123", "acme");
-        HttpServletRequest servletRequest = mock(HttpServletRequest.class);
-        when(onboardingService.register(any())).thenThrow(new IllegalStateException("not verified"));
+    assertThat(result.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+    assertThat(result.getBody())
+        .isEqualTo(new AccountRegistrationResponse("a@example.com", "Full Name", "acme", "active"));
 
-        assertThatThrownBy(() -> controller.registerAccount(request, servletRequest))
-                .isInstanceOf(IllegalStateException.class);
+    ArgumentCaptor<RegistrationCommand> commandCaptor =
+        ArgumentCaptor.forClass(RegistrationCommand.class);
+    InOrder order = inOrder(onboardingService, onboardingOnFlightTokenService);
+    order.verify(onboardingService).register(commandCaptor.capture());
+    order.verify(onboardingOnFlightTokenService).validateAndConsume("raw-token");
+    assertThat(commandCaptor.getValue().vrfkToken()).isEqualTo("vrfk-token-value");
+  }
 
-        verify(onboardingTokenService, never()).extractToken(servletRequest);
-        verify(onboardingTokenService, never()).validateAndConsume(any());
-    }
+  @Test
+  void registerAccount_doesNotConsumeToken_whenRegistrationFails() {
+    AccountRegistrationRequest request =
+        new AccountRegistrationRequest(
+            "vrfk-token-value", "a@example.com", "Full Name", "password123", "acme");
+    HttpServletRequest servletRequest = mock(HttpServletRequest.class);
+    when(onboardingService.register(any())).thenThrow(new IllegalStateException("not verified"));
+
+    assertThatThrownBy(() -> controller.registerAccount(request, servletRequest))
+        .isInstanceOf(IllegalStateException.class);
+
+    verify(onboardingOnFlightTokenService, never()).extractToken(servletRequest);
+    verify(onboardingOnFlightTokenService, never()).validateAndConsume(any());
+  }
 }
