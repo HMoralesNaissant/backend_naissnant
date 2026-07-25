@@ -1,6 +1,6 @@
 package com.tenantos.registrar.security;
 
-import com.tenantos.registrar.services.OnboardingTokenService;
+import com.tenantos.registrar.services.OnboardingOtpService;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -23,7 +23,7 @@ import static org.mockito.Mockito.when;
 class OnboardingTokenAuthenticationFilterTest {
 
     @Mock
-    private OnboardingTokenService onboardingTokenService;
+    private OnboardingOtpService onboardingTokenService;
     @Mock
     private FilterChain filterChain;
 

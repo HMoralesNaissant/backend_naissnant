@@ -7,7 +7,8 @@ import com.tenantos.registrar.domain.response.AccountRegistrationResponse;
 import com.tenantos.registrar.entity.Onboarding;
 import com.tenantos.registrar.entity.TenantsRegistration;
 import com.tenantos.registrar.services.OnboardingService;
-import com.tenantos.registrar.services.OnboardingTokenService;
+import com.tenantos.registrar.services.OnboardingService.RegistrationCommand;
+import com.tenantos.registrar.services.OnboardingOtpService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.junit.jupiter.api.Test;
@@ -37,7 +38,7 @@ class OnboardingRestControllerTest {
     @Mock
     private OnboardingService onboardingService;
     @Mock
-    private OnboardingTokenService onboardingTokenService;
+    private OnboardingOtpService onboardingTokenService;
 
     @InjectMocks
     private OnboardingRestController controller;
@@ -104,7 +105,7 @@ class OnboardingRestControllerTest {
         assertThat(result.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(result.getBody()).isEqualTo(java.util.Map.of("status", "verified"));
         verify(onboardingTokenService).validateOtp(
-                new OnboardingTokenService.OtpValidationCommand("a@example.com", "code", "123456"));
+                new OnboardingOtpService.OtpValidationCommand("a@example.com", "code", "123456"));
     }
 
     @Test
@@ -114,7 +115,7 @@ class OnboardingRestControllerTest {
         // since a fresh GET /onboarding/token + POST /onboarding can't recreate the
         // already-existing onboarding row. Fixed this session by reordering.
         AccountRegistrationRequest request = new AccountRegistrationRequest(
-                "a@example.com", "Full Name", "password123", "acme");
+                "vrfk-token-value", "a@example.com", "Full Name", "password123", "acme");
         HttpServletRequest servletRequest = mock(HttpServletRequest.class);
         TenantsRegistration saved = TenantsRegistration.builder()
                 .companyEmail("a@example.com").fullName("Full Name")
@@ -128,15 +129,17 @@ class OnboardingRestControllerTest {
         assertThat(result.getBody()).isEqualTo(new AccountRegistrationResponse(
                 "a@example.com", "Full Name", "acme", "active"));
 
+        ArgumentCaptor<RegistrationCommand> commandCaptor = ArgumentCaptor.forClass(RegistrationCommand.class);
         InOrder order = inOrder(onboardingService, onboardingTokenService);
-        order.verify(onboardingService).register(any());
+        order.verify(onboardingService).register(commandCaptor.capture());
         order.verify(onboardingTokenService).validateAndConsume("raw-token");
+        assertThat(commandCaptor.getValue().vrfkToken()).isEqualTo("vrfk-token-value");
     }
 
     @Test
     void registerAccount_doesNotConsumeToken_whenRegistrationFails() {
         AccountRegistrationRequest request = new AccountRegistrationRequest(
-                "a@example.com", "Full Name", "password123", "acme");
+                "vrfk-token-value", "a@example.com", "Full Name", "password123", "acme");
         HttpServletRequest servletRequest = mock(HttpServletRequest.class);
         when(onboardingService.register(any())).thenThrow(new IllegalStateException("not verified"));
 

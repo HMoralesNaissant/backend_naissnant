@@ -8,9 +8,15 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.time.Instant;
+import java.util.Optional;
 
 @Repository
 public interface OnboardingOtpRepository extends JpaRepository<OnboardingOtp, String> {
+
+
+    Optional<OnboardingOtp> findByCompanyEmail(String companyEmail);
+
+    Optional<OnboardingOtp> findByOtpIdAndCompanyEmail(String otpId, String companyEmail);
 
     /**
      * Atomically records a validation attempt, only if the OTP is still pending, unexpired,

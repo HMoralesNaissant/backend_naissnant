@@ -4,13 +4,11 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
 import lombok.Builder.Default;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
-import org.springframework.context.annotation.Primary;
+import lombok.experimental.SuperBuilder;
 
 import java.time.Instant;
 
@@ -23,9 +21,8 @@ import java.time.Instant;
 @Getter
 @Setter
 @NoArgsConstructor
-@AllArgsConstructor
-@Builder
-public class OnboardingOtp {
+@SuperBuilder
+public class OnboardingOtp extends BaseAuditFields {
 
     @Id
     @Column(name = "otp_id", length = 200, nullable = false)
@@ -48,9 +45,8 @@ public class OnboardingOtp {
     @Column(name = "expires_at", nullable = false)
     private Instant expiresAt;
 
-    @Column(name = "created_at", nullable = false)
-    private Instant createdAt;
-
+    // Set explicitly by OnboardingOtpRepository#markValidated when the code is confirmed -
+    // not driven by @LastModifiedDate, since that now tracks the inherited updatedAt instead.
     @Column(name = "validated_at")
     private Instant validatedAt;
 }

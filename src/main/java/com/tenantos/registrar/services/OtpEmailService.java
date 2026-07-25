@@ -3,7 +3,7 @@ package com.tenantos.registrar.services;
 import com.tenantos.registrar.entity.Onboarding;
 import com.tenantos.registrar.entity.OnboardingOtp;
 import com.tenantos.registrar.repository.OnboardingOtpRepository;
-import com.tenantos.registrar.security.HashUtils;
+import com.tenantos.registrar.utils.HashUtils;
 import jakarta.mail.internet.MimeMessage;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.javamail.JavaMailSender;
@@ -68,7 +68,7 @@ public class OtpEmailService {
     }
 
     private void send(String companyEmail, String rawCode, OnboardingOtp otp) {
-        String verifyUrl = buildVerifyUrl(rawCode, otp);
+        String verifyUrl = buildVerifyUrl(otp);
         String htmlBody = renderHtml(rawCode, verifyUrl);
         String plainTextBody = "Your verification code is: " + rawCode + "\n\n"
                 + "Or continue here: " + verifyUrl + "\n\n"
@@ -94,12 +94,11 @@ public class OtpEmailService {
         return templateEngine.process(TEMPLATE_NAME, context);
     }
 
-    private String buildVerifyUrl(String rawCode, OnboardingOtp otp) {
+    private String buildVerifyUrl(OnboardingOtp otp) {
         String encodedEmail = URLEncoder.encode(otp.getCompanyEmail(), StandardCharsets.UTF_8);
         return verifyUrlTemplate
                 .replace("{vftk}", otp.getOtpId())
-                .replace("{email}", encodedEmail)
-                .replace("{code}", rawCode);
+                .replace("{email}", encodedEmail);
     }
 
     /**
@@ -109,12 +108,12 @@ public class OtpEmailService {
      * round-trip. Same trust-the-entropy approach as OnboardingTokenService.issue().
      */
     private String generateUniqueOtpId() {
-        return randomAlphanumeric(OTP_ID_LENGTH);
+        return randomAlphanumeric();
     }
 
-    private String randomAlphanumeric(int length) {
-        StringBuilder sb = new StringBuilder(length);
-        for (int i = 0; i < length; i++) {
+    private String randomAlphanumeric() {
+        StringBuilder sb = new StringBuilder(OtpEmailService.OTP_ID_LENGTH);
+        for (int i = 0; i < OtpEmailService.OTP_ID_LENGTH; i++) {
             int idx = secureRandom.nextInt(OTP_ID_ALPHABET.length());
             sb.append(OTP_ID_ALPHABET.charAt(idx));
         }

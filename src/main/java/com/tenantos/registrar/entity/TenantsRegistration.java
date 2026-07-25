@@ -4,12 +4,11 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
 import lombok.Builder.Default;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import lombok.experimental.SuperBuilder;
 
 /**
  * JPA entity mapping for the tenants_registration table (V1__initial_setup.sql).
@@ -20,9 +19,8 @@ import lombok.Setter;
 @Getter
 @Setter
 @NoArgsConstructor
-@AllArgsConstructor
-@Builder
-public class TenantsRegistration {
+@SuperBuilder
+public class TenantsRegistration extends BaseAuditFields {
 
     @Id
     @Column(name = "company_email", length = 200, nullable = false)
@@ -41,5 +39,5 @@ public class TenantsRegistration {
 
     @Column(name = "status", length = 20, nullable = false)
     @Default
-    private String status = "active";
+    private String status = "onboarding";
 }

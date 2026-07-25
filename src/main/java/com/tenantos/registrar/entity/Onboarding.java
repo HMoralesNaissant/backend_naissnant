@@ -4,12 +4,11 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
 import lombok.Builder.Default;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import lombok.experimental.SuperBuilder;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
@@ -21,9 +20,8 @@ import org.hibernate.type.SqlTypes;
 @Getter
 @Setter
 @NoArgsConstructor
-@AllArgsConstructor
-@Builder
-public class Onboarding {
+@SuperBuilder
+public class Onboarding extends BaseAuditFields {
 
     @Id
     @Column(name = "company_email", length = 200, nullable = false)
@@ -42,9 +40,5 @@ public class Onboarding {
 
     @Column(name = "status", length = 20, nullable = false)
     @Default
-    private String status = "active";
+    private String status = "pending";
 }
-
-
-
-

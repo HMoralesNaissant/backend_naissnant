@@ -1,6 +1,6 @@
 buildscript {
 	dependencies {
-		classpath 'org.flywaydb:flyway-database-postgresql:11.1.0'
+		classpath 'org.flywaydb:flyway-database-postgresql:13.0.0'
 	}
 }
 
@@ -8,6 +8,7 @@ plugins {
 	id 'java'
 	id 'org.springframework.boot' version '4.0.6'
 	id 'io.spring.dependency-management' version '1.1.7'
+	id 'org.flywaydb.flyway' version '13.0.0'
 }
 
 group = 'com.tenantos.registrar'
@@ -51,10 +52,18 @@ dependencies {
 }
 
 // Read from system environment or fallback to local defaults for convenience
-def dbUrl = System.getenv('DB_URL') ?: 'jdbc:postgresql://localhost:54321/tenantos_registrar'
-def dbUser = System.getenv('DB_USERNAME') ?: 'tenantos_registrar'
-def dbPassword = System.getenv('DB_PASSWORD') ?: 'c4rl0sP@ssw0rds'
+def dbUrl = System.getenv('DB_URL') ?: "jdbc:postgresql://localhost:54321/${System.getenv('DB_NAME') ?: 'tenantos_registrar'}"
+def dbUser = System.getenv('POSTGRES_USER') ?: 'tenantos-master'
+def dbPassword = System.getenv('POSTGRES_PASSWORD') ?: 'c4rl0sP@ssw0rds'
 
+flyway {
+	url = dbUrl
+	user = dbUser
+	password = dbPassword
+	locations = ['classpath:db/migration']
+	baselineOnMigrate = true
+	cleanDisabled = true // flywayClean drops the whole schema; keep it opt-in only
+}
 
 tasks.named('test') {
 	useJUnitPlatform()

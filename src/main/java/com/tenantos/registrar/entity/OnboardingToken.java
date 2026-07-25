@@ -4,33 +4,36 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import lombok.experimental.SuperBuilder;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.Instant;
 
 /**
  * A single-use, short-lived preflight token gating POST /onboarding. Issued before the
  * caller's company_email is known, so it's keyed by its own hash rather than the email.
+ * Also logs the requesting client's browser details captured at issue time - purely an
+ * audit trail, never read back to authorize anything.
  */
 @Entity
 @Table(name = "onboarding_token")
 @Getter
 @Setter
 @NoArgsConstructor
-@AllArgsConstructor
-@Builder
-public class OnboardingToken {
+@SuperBuilder
+public class OnboardingToken extends BaseAuditFields {
 
     @Id
     @Column(name = "token_hash", length = 64, nullable = false)
     private String tokenHash;
 
-    @Column(name = "created_at", nullable = false)
-    private Instant createdAt;
+    @Column(name = "client_details", columnDefinition = "json", nullable = false)
+    @JdbcTypeCode(SqlTypes.JSON)
+    private String clientDetails;
 
     @Column(name = "expires_at", nullable = false)
     private Instant expiresAt;

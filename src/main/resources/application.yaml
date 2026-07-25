@@ -2,7 +2,6 @@ spring:
   profiles:
     active: local
 
-
   application:
     name: backend
   datasource:
@@ -22,21 +21,27 @@ spring:
   jpa:
     open-in-view: false
     hibernate:
-      ddl-auto: ${JPA_DDL_AUTO:update}
+      ddl-auto: none
     properties:
       hibernate:
         jdbc:
           time_zone: UTC
         format_sql: true
         dialect: org.hibernate.dialect.PostgreSQLDialect
+
+  #SQL DATABASE INITIALIZATION
   sql:
     init:
       mode: never
+
+  #FLYWAY
   flyway:
     enabled: false
     locations:
       - classpath:db/migration
-    baselineOnMigrate: false
+    baselineOnMigrate: true
+
+  #MAIL
   mail:
     host: ${SMTP_HOST:localhost}
     port: ${SMTP_PORT:1025}
@@ -48,19 +53,47 @@ spring:
           auth: ${SMTP_AUTH:false}
           starttls:
             enable: ${SMTP_STARTTLS:false}
+
+  #THYMELEAF
   thymeleaf:
     prefix: classpath:/email/templates/
 
+#FRONTEND APP REGISTRATION CONFIGURATION
 fe:
   onboarding:
     session-token-cookie-name: ${ONBOARDING_TOKEN_COOKIE_NAME:onboarding_token}
-    token-ttl-seconds: ${ONBOARDING_TOKEN_TTL_SECONDS:900}
+    token-ttl-seconds: ${ONBOARDING_TOKEN_TTL_SECONDS:3600}
     otp-ttl-seconds: ${ONBOARDING_OTP_TTL_SECONDS:600}
     otp-max-attempts: ${ONBOARDING_OTP_MAX_ATTEMPTS:5}
     otp-from-address: ${ONBOARDING_OTP_FROM_ADDRESS:no-reply@tenantos.local}
-    verify-url-template: ${ONBOARDING_VERIFY_URL_TEMPLATE:http://localhost:3000/onboarding/verify?email={email}&code={code}&vftk={vftk}}
+    verify-url-template: ${ONBOARDING_VERIFY_URL_TEMPLATE:http://localhost:3000/onboarding/verify?email={email}&vftk={vftk}}
 
 logging:
   level:
     org.flywaydb: DEBUG
+    org:
+      springframework:
+        security: DEBUG
+
+#SECURITY CONFIGURATION
+security:
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000}
+    allowed-methods: ${CORS_ALLOWED_METHODS:GET,POST,PUT,DELETE,OPTIONS}
+    allowed-headers: ${CORS_ALLOWED_HEADERS:Authorization,Content-Type}
+    max-age: ${CORS_MAX_AGE:3600}
+    allow-credentials: ${CORS_ALLOW_CREDENTIALS:true}
+
+
+#RATE LIMITING CONFIGURATION
+ratelimit:
+  config:
+    onboarding:
+      path: "/onboarding"
+      maxRequests: ${RATE_LIMIT_ONBOARDING_MAX_REQUESTS:60}
+      windowSeconds: ${RATE_LIMIT_ONBOARDING_WINDOW_SECONDS:60}
+      enabled: ${RATE_LIMIT_ONBOARDING_ENABLED:true}
+
+server:
+  port: ${PORT:8080}
 

@@ -7,6 +7,8 @@ import jakarta.validation.constraints.Size;
 
 @Schema(name = "AccountRegistrationRequest", description = "Payload to complete tenant account registration")
 public record AccountRegistrationRequest(
+        @NotBlank(message = "Verification token is required")
+        String vrfkToken,
         @NotBlank(message = "companyEmail is required")
         @Email(message = "companyEmail must be a valid email")
         String companyEmail,

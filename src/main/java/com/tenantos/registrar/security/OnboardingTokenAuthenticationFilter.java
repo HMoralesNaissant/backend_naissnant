@@ -1,6 +1,6 @@
 package com.tenantos.registrar.security;
 
-import com.tenantos.registrar.services.OnboardingTokenService;
+import com.tenantos.registrar.services.OnboardingOtpService;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -24,9 +24,9 @@ import java.util.List;
  */
 public class OnboardingTokenAuthenticationFilter extends OncePerRequestFilter {
 
-    private final OnboardingTokenService onboardingTokenService;
+    private final OnboardingOtpService onboardingTokenService;
 
-    public OnboardingTokenAuthenticationFilter(OnboardingTokenService onboardingTokenService) {
+    public OnboardingTokenAuthenticationFilter(OnboardingOtpService onboardingTokenService) {
         this.onboardingTokenService = onboardingTokenService;
     }
 

@@ -1,7 +1,10 @@
 package com.tenantos.registrar.services;
 
 import com.tenantos.registrar.entity.Onboarding;
+import com.tenantos.registrar.entity.OnboardingOtp;
 import com.tenantos.registrar.entity.TenantsRegistration;
+import com.tenantos.registrar.exceptions.InvalidOtpException;
+import com.tenantos.registrar.repository.OnboardingOtpRepository;
 import com.tenantos.registrar.repository.OnboardingRepository;
 import com.tenantos.registrar.repository.TenantsRegistrationRepository;
 import org.junit.jupiter.api.Test;
@@ -29,6 +32,8 @@ class OnboardingServiceTest {
     private TenantsRegistrationRepository repository;
     @Mock
     private OnboardingRepository onboardingRepository;
+    @Mock
+    private OnboardingOtpRepository onboardingOtpRepository;
     @Mock
     private PasswordEncoder passwordEncoder;
 
@@ -115,6 +120,8 @@ class OnboardingServiceTest {
     void register_throwsIllegalState_whenOnboardingNotYetVerified() {
         Onboarding onboarding = Onboarding.builder().companyEmail("a@example.com").status("otp-validation").build();
         when(onboardingRepository.findById("a@example.com")).thenReturn(Optional.of(onboarding));
+        when(onboardingOtpRepository.findByOtpIdAndCompanyEmail("vrfk-token", "a@example.com"))
+                .thenReturn(Optional.of(validatedOtp()));
 
         assertThatThrownBy(() -> service.register(command()))
                 .isInstanceOf(IllegalStateException.class)
@@ -127,6 +134,8 @@ class OnboardingServiceTest {
     void register_throwsDataIntegrityViolation_whenAlreadyRegistered() {
         Onboarding onboarding = Onboarding.builder().companyEmail("a@example.com").status("active").build();
         when(onboardingRepository.findById("a@example.com")).thenReturn(Optional.of(onboarding));
+        when(onboardingOtpRepository.findByOtpIdAndCompanyEmail("vrfk-token", "a@example.com"))
+                .thenReturn(Optional.of(validatedOtp()));
         when(repository.existsById("a@example.com")).thenReturn(true);
 
         assertThatThrownBy(() -> service.register(command()))
@@ -136,9 +145,39 @@ class OnboardingServiceTest {
     }
 
     @Test
+    void register_throwsInvalidOtp_whenVrfkTokenDoesNotMatchAValidatedOtp() {
+        Onboarding onboarding = Onboarding.builder().companyEmail("a@example.com").status("active").build();
+        when(onboardingRepository.findById("a@example.com")).thenReturn(Optional.of(onboarding));
+        when(onboardingOtpRepository.findByOtpIdAndCompanyEmail("vrfk-token", "a@example.com"))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.register(command()))
+                .isInstanceOf(InvalidOtpException.class);
+
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    void register_throwsInvalidOtp_whenOtpExistsButNotYetValidated() {
+        Onboarding onboarding = Onboarding.builder().companyEmail("a@example.com").status("active").build();
+        when(onboardingRepository.findById("a@example.com")).thenReturn(Optional.of(onboarding));
+        OnboardingOtp otp = OnboardingOtp.builder()
+                .otpId("vrfk-token").companyEmail("a@example.com").status("created").build();
+        when(onboardingOtpRepository.findByOtpIdAndCompanyEmail("vrfk-token", "a@example.com"))
+                .thenReturn(Optional.of(otp));
+
+        assertThatThrownBy(() -> service.register(command()))
+                .isInstanceOf(InvalidOtpException.class);
+
+        verify(repository, never()).save(any());
+    }
+
+    @Test
     void register_neverPersistsTheRawPassword_andMarksOnboardingCompleted() {
         Onboarding onboarding = Onboarding.builder().companyEmail("a@example.com").status("active").build();
         when(onboardingRepository.findById("a@example.com")).thenReturn(Optional.of(onboarding));
+        when(onboardingOtpRepository.findByOtpIdAndCompanyEmail("vrfk-token", "a@example.com"))
+                .thenReturn(Optional.of(validatedOtp()));
         when(repository.existsById("a@example.com")).thenReturn(false);
         when(passwordEncoder.encode("raw-password")).thenReturn("bcrypt-hash");
         when(repository.save(any(TenantsRegistration.class))).thenAnswer(invocation -> invocation.getArgument(0));
@@ -159,7 +198,12 @@ class OnboardingServiceTest {
 
     private static OnboardingService.RegistrationCommand command() {
         return new OnboardingService.RegistrationCommand(
-                "a@example.com", "Full Name", "raw-password", "acme");
+                "vrfk-token", "a@example.com", "Full Name", "raw-password", "acme");
+    }
+
+    private static OnboardingOtp validatedOtp() {
+        return OnboardingOtp.builder()
+                .otpId("vrfk-token").companyEmail("a@example.com").status("validated").build();
     }
 
 }

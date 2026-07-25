@@ -8,8 +8,7 @@ import com.tenantos.registrar.exceptions.InvalidOtpException;
 import com.tenantos.registrar.repository.OnboardingOtpRepository;
 import com.tenantos.registrar.repository.OnboardingRepository;
 import com.tenantos.registrar.repository.OnboardingTokenRepository;
-import com.tenantos.registrar.repository.OnboardingTokenRequestRepository;
-import com.tenantos.registrar.security.HashUtils;
+import com.tenantos.registrar.utils.HashUtils;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.BeforeEach;
@@ -36,14 +35,12 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
-class OnboardingTokenServiceTest {
+class OnboardingOtpCodeServiceTest {
 
     private static final String COOKIE_NAME = "onboarding_token";
 
     @Mock
     private OnboardingTokenRepository repository;
-    @Mock
-    private OnboardingTokenRequestRepository requestRepository;
     @Mock
     private OnboardingOtpRepository otpRepository;
     @Mock
@@ -52,7 +49,7 @@ class OnboardingTokenServiceTest {
     private OtpAttemptTracker otpAttemptTracker;
 
     @InjectMocks
-    private OnboardingTokenService service;
+    private OnboardingOtpService service;
 
     @BeforeEach
     void setUp() {
@@ -64,7 +61,7 @@ class OnboardingTokenServiceTest {
     // --- issue ---
 
     @Test
-    void issue_savesTokenAndRequestLog_andReturnsARawTokenThatHashesToTheSavedHash() {
+    void issue_savesToken_andReturnsARawTokenThatHashesToTheSavedHash() {
         String rawToken = service.issue(Map.of("ipAddress", "127.0.0.1"));
 
         assertThat(rawToken).isNotBlank();
@@ -73,8 +70,7 @@ class OnboardingTokenServiceTest {
         verify(repository).save(tokenCaptor.capture());
         assertThat(tokenCaptor.getValue().getTokenHash()).isEqualTo(HashUtils.sha256Hex(rawToken));
         assertThat(tokenCaptor.getValue().getExpiresAt()).isAfter(Instant.now());
-
-        verify(requestRepository).save(any());
+        assertThat(tokenCaptor.getValue().getClientDetails()).contains("127.0.0.1");
     }
 
     // --- validateAndConsume ---
@@ -195,7 +191,7 @@ class OnboardingTokenServiceTest {
         when(onboardingRepository.findById("a@example.com")).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.validateOtp(
-                new OnboardingTokenService.OtpValidationCommand("a@example.com", "code", "123456")))
+                new OnboardingOtpService.OtpValidationCommand("a@example.com", "code", "123456")))
                 .isInstanceOf(InvalidOtpException.class);
 
         verify(otpAttemptTracker, never()).recordAttempt(anyString(), any(), anyInt());
@@ -206,7 +202,7 @@ class OnboardingTokenServiceTest {
         when(onboardingRepository.findById("a@example.com")).thenReturn(Optional.of(pendingOnboarding()));
 
         assertThatThrownBy(() -> service.validateOtp(
-                new OnboardingTokenService.OtpValidationCommand("a@example.com", "sms", "123456")))
+                new OnboardingOtpService.OtpValidationCommand("a@example.com", "sms", "123456")))
                 .isInstanceOf(InvalidOtpException.class)
                 .hasMessageContaining("otpType mismatch");
 
@@ -220,7 +216,7 @@ class OnboardingTokenServiceTest {
         when(onboardingRepository.findById("a@example.com")).thenReturn(Optional.of(alreadyActive));
 
         assertThatThrownBy(() -> service.validateOtp(
-                new OnboardingTokenService.OtpValidationCommand("a@example.com", "code", "123456")))
+                new OnboardingOtpService.OtpValidationCommand("a@example.com", "code", "123456")))
                 .isInstanceOf(InvalidOtpException.class)
                 .hasMessageContaining("not awaiting OTP validation");
 
@@ -233,7 +229,7 @@ class OnboardingTokenServiceTest {
         when(otpAttemptTracker.recordAttempt(eq("a@example.com"), any(), eq(5))).thenReturn(0);
 
         assertThatThrownBy(() -> service.validateOtp(
-                new OnboardingTokenService.OtpValidationCommand("a@example.com", "code", "123456")))
+                new OnboardingOtpService.OtpValidationCommand("a@example.com", "code", "123456")))
                 .isInstanceOf(InvalidOtpException.class)
                 .hasMessageContaining("expired or too many attempts");
 
@@ -255,7 +251,7 @@ class OnboardingTokenServiceTest {
         when(otpRepository.findById("a@example.com")).thenReturn(Optional.of(otp));
 
         assertThatThrownBy(() -> service.validateOtp(
-                new OnboardingTokenService.OtpValidationCommand("a@example.com", "code", "111111")))
+                new OnboardingOtpService.OtpValidationCommand("a@example.com", "code", "111111")))
                 .isInstanceOf(InvalidOtpException.class)
                 .hasMessageContaining("Invalid OTP code");
 
@@ -271,7 +267,7 @@ class OnboardingTokenServiceTest {
         when(otpRepository.findById("a@example.com")).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.validateOtp(
-                new OnboardingTokenService.OtpValidationCommand("a@example.com", "code", "123456")))
+                new OnboardingOtpService.OtpValidationCommand("a@example.com", "code", "123456")))
                 .isInstanceOf(InvalidOtpException.class);
     }
 
@@ -287,7 +283,7 @@ class OnboardingTokenServiceTest {
         when(otpRepository.markValidated(eq("a@example.com"), any())).thenReturn(0);
 
         assertThatThrownBy(() -> service.validateOtp(
-                new OnboardingTokenService.OtpValidationCommand("a@example.com", "code", "123456")))
+                new OnboardingOtpService.OtpValidationCommand("a@example.com", "code", "123456")))
                 .isInstanceOf(InvalidOtpException.class)
                 .hasMessageContaining("already validated");
 
@@ -306,7 +302,7 @@ class OnboardingTokenServiceTest {
         when(otpRepository.findById("a@example.com")).thenReturn(Optional.of(otp));
         when(otpRepository.markValidated(eq("a@example.com"), any())).thenReturn(1);
 
-        service.validateOtp(new OnboardingTokenService.OtpValidationCommand("a@example.com", "code", "123456"));
+        service.validateOtp(new OnboardingOtpService.OtpValidationCommand("a@example.com", "code", "123456"));
 
         assertThat(onboarding.getStatus()).isEqualTo("active");
         verify(onboardingRepository).save(onboarding);
