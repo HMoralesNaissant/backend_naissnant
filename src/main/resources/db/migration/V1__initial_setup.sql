@@ -8,7 +8,7 @@ CREATE TABLE onboarding
     otp_type        VARCHAR(50) NOT NULL DEFAULT 'code',
     otp_details     JSON        NOT NULL DEFAULT '{}'::json,
     expiration_time TIMESTAMP   NOT NULL DEFAULT (NOW() + INTERVAL '60 minutes'),
-    status          VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'otp-validated', 'completed', 'expired')),
+    status          VARCHAR(20) NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING', 'OTP_VALIDATED', 'COMPLETED', 'EXPIRED')),
     created_at      TIMESTAMP   NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMP NULL
 );
@@ -18,7 +18,7 @@ CREATE TABLE onboarding_otp
     otp_id        varchar(200) primary key,
     company_email VARCHAR(200),
     code_hash     VARCHAR(64) NOT NULL,
-    status        VARCHAR(20) NOT NULL DEFAULT 'created' CHECK (status IN ('created', 'invalidated', 'validated', 'expired')),
+    status        VARCHAR(20) NOT NULL DEFAULT 'CREATED' CHECK (status IN ('CREATED', 'INVALIDATED', 'VALIDATED', 'EXPIRED')),
     attempts      INT         NOT NULL DEFAULT 0,
     expires_at    TIMESTAMP   NOT NULL,
     created_at    TIMESTAMP   NOT NULL DEFAULT NOW(),
@@ -34,7 +34,7 @@ CREATE TABLE tenants_registration
     full_name     VARCHAR(200),
     password      VARCHAR(200),
     account_name  VARCHAR(100),
-    status        VARCHAR(20) NOT NULL DEFAULT 'onboarding' CHECK (status IN ('onboarding', 'completed')),
+    status        VARCHAR(20) NOT NULL DEFAULT 'ONBOARDING' CHECK (status IN ('ONBOARDING', 'COMPLETED')),
     created_at    TIMESTAMP   NOT NULL DEFAULT NOW(),
     updated_at    TIMESTAMP NULL
 );

@@ -3,6 +3,7 @@ package com.tenantos.registrar.services;
 import com.tenantos.registrar.entity.Onboarding;
 import com.tenantos.registrar.entity.OnboardingOtp;
 import com.tenantos.registrar.entity.OnboardingToken;
+import com.tenantos.registrar.enums.OnboardingStatus;
 import com.tenantos.registrar.exceptions.InvalidOnboardingTokenException;
 import com.tenantos.registrar.exceptions.InvalidOtpException;
 import com.tenantos.registrar.repository.OnboardingOtpRepository;
@@ -191,7 +192,7 @@ class OnboardingOtpCodeServiceTest {
     return Onboarding.builder()
         .companyEmail("a@example.com")
         .otpType("code")
-        .status("pending")
+        .status(OnboardingStatus.PENDING)
         .build();
   }
 
@@ -228,7 +229,7 @@ class OnboardingOtpCodeServiceTest {
   @Test
   void validateOtp_throws_whenOnboardingNotAwaitingOtpValidation() {
     Onboarding alreadyActive = pendingOnboarding();
-    alreadyActive.setStatus("active");
+    alreadyActive.setStatus(OnboardingStatus.COMPLETED);
     when(onboardingRepository.findById("a@example.com")).thenReturn(Optional.of(alreadyActive));
 
     assertThatThrownBy(
@@ -343,7 +344,7 @@ class OnboardingOtpCodeServiceTest {
     onboardingOtpService.validateOtp(
         new OnboardingOtpService.OtpValidationCommand("a@example.com", "code", "123456"));
 
-    assertThat(onboarding.getStatus()).isEqualTo("otp-validated");
+    assertThat(onboarding.getStatus()).isEqualTo(OnboardingStatus.OTP_VALIDATED);
     verify(onboardingRepository).save(onboarding);
   }
 

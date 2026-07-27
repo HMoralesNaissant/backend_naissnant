@@ -2,14 +2,14 @@ package com.tenantos.registrar.controllers;
 
 import com.tenantos.registrar.domain.request.AccountRegistrationRequest;
 import com.tenantos.registrar.domain.request.OnboardingRequest;
-import com.tenantos.registrar.domain.request.OtpValidationRequest;
-import com.tenantos.registrar.domain.request.ResendCodeRequest;
+import com.tenantos.registrar.domain.request.OnboardingRegistrationCommand;
+import com.tenantos.registrar.domain.request.ResendCodeCommand;
 import com.tenantos.registrar.domain.response.AccountRegistrationResponse;
 import com.tenantos.registrar.entity.Onboarding;
 import com.tenantos.registrar.entity.TenantsRegistration;
+import com.tenantos.registrar.enums.TenantsRegistrationStatus;
 import com.tenantos.registrar.services.OnboardingOnFlightTokenService;
 import com.tenantos.registrar.services.OnboardingService;
-import com.tenantos.registrar.services.OnboardingService.RegistrationCommand;
 import com.tenantos.registrar.services.OnboardingOtpService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -97,10 +97,9 @@ class OnboardingRestControllerTest {
     assertThat(captor.getValue().getOtpType()).isEqualTo("sms");
   }
 
-
   @Test
   void resendCode_delegatesToOnboardingOtpService_withTypeFromPathAndEmailFromBody() {
-    ResendCodeRequest request = new ResendCodeRequest("a@example.com");
+    ResendCodeCommand request = new ResendCodeCommand("a@example.com");
     when(onboardingTokenService.resendCode(any())).thenReturn(true);
 
     ResponseEntity<?> result = controller.resendCode("code", request);
@@ -130,7 +129,7 @@ class OnboardingRestControllerTest {
             .fullName("Full Name")
             .password("bcrypt-hash")
             .accountName("acme")
-            .status("active")
+            .status(TenantsRegistrationStatus.COMPLETED)
             .build();
     when(onboardingService.register(any())).thenReturn(saved);
     when(onboardingOnFlightTokenService.extractToken(servletRequest)).thenReturn("raw-token");
@@ -139,10 +138,11 @@ class OnboardingRestControllerTest {
 
     assertThat(result.getStatusCode()).isEqualTo(HttpStatus.CREATED);
     assertThat(result.getBody())
-        .isEqualTo(new AccountRegistrationResponse("a@example.com", "Full Name", "acme", "active"));
+        .isEqualTo(
+            new AccountRegistrationResponse("a@example.com", "Full Name", "acme", "COMPLETED"));
 
-    ArgumentCaptor<RegistrationCommand> commandCaptor =
-        ArgumentCaptor.forClass(RegistrationCommand.class);
+    ArgumentCaptor<OnboardingRegistrationCommand> commandCaptor =
+        ArgumentCaptor.forClass(OnboardingRegistrationCommand.class);
     InOrder order = inOrder(onboardingService, onboardingOnFlightTokenService);
     order.verify(onboardingService).register(commandCaptor.capture());
     order.verify(onboardingOnFlightTokenService).validateAndConsume("raw-token");

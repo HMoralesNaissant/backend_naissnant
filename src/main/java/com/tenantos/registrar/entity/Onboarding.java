@@ -1,7 +1,10 @@
 package com.tenantos.registrar.entity;
 
+import com.tenantos.registrar.enums.OnboardingStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import lombok.Builder.Default;
@@ -38,7 +41,8 @@ public class Onboarding extends BaseAuditFields {
     @Default
     private String otpDetails = "{}";
 
+    @Enumerated(EnumType.STRING)
     @Column(name = "status", length = 20, nullable = false)
     @Default
-    private String status = "pending";
+    private OnboardingStatus status = OnboardingStatus.PENDING;
 }

@@ -1,7 +1,10 @@
 package com.tenantos.registrar.entity;
 
+import com.tenantos.registrar.enums.TenantsRegistrationStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import lombok.Builder.Default;
@@ -37,7 +40,8 @@ public class TenantsRegistration extends BaseAuditFields {
     @Column(name = "account_name", length = 100)
     private String accountName;
 
+    @Enumerated(EnumType.STRING)
     @Column(name = "status", length = 20, nullable = false)
     @Default
-    private String status = "onboarding";
+    private TenantsRegistrationStatus status = TenantsRegistrationStatus.ONBOARDING;
 }

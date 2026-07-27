@@ -1,8 +1,11 @@
 package com.tenantos.registrar.services;
 
+import com.tenantos.registrar.domain.request.OnboardingRegistrationCommand;
 import com.tenantos.registrar.entity.Onboarding;
 import com.tenantos.registrar.entity.OnboardingOtp;
 import com.tenantos.registrar.entity.TenantsRegistration;
+import com.tenantos.registrar.enums.OnboardingOtpStatus;
+import com.tenantos.registrar.enums.OnboardingStatus;
 import com.tenantos.registrar.exceptions.InvalidOtpException;
 import com.tenantos.registrar.repository.OnboardingOtpRepository;
 import com.tenantos.registrar.repository.OnboardingRepository;
@@ -78,7 +81,7 @@ class OnboardingServiceTest {
     void onboardUser_overwritesClientSuppliedStatusAndOtpDetails_regardlessOfInput() {
         Onboarding onboarding = Onboarding.builder()
                 .companyEmail("new@example.com")
-                .status("completed") // attempted tamper
+                .status(OnboardingStatus.COMPLETED) // attempted tamper
                 .otpDetails("{\"hacked\":true}") // attempted tamper
                 .build();
         when(repository.existsById("new@example.com")).thenReturn(false);
@@ -86,14 +89,14 @@ class OnboardingServiceTest {
 
         Onboarding saved = service.onboardUser(onboarding);
 
-        assertThat(saved.getStatus()).isEqualTo("pending");
+        assertThat(saved.getStatus()).isEqualTo(OnboardingStatus.PENDING);
         assertThat(saved.getOtpDetails()).isEqualTo("{}");
     }
 
     @Test
     void onboardUser_savesThenTriggersOtpEmail_withTheSavedEntity() {
         Onboarding onboarding = Onboarding.builder().companyEmail("new@example.com").build();
-        Onboarding persisted = Onboarding.builder().companyEmail("new@example.com").status("otp-validation").build();
+        Onboarding persisted = Onboarding.builder().companyEmail("new@example.com").status(OnboardingStatus.PENDING).build();
         when(repository.existsById("new@example.com")).thenReturn(false);
         when(onboardingRepository.save(any(Onboarding.class))).thenReturn(persisted);
 
@@ -118,7 +121,7 @@ class OnboardingServiceTest {
 
     @Test
     void register_throwsIllegalState_whenOnboardingNotYetVerified() {
-        Onboarding onboarding = Onboarding.builder().companyEmail("a@example.com").status("otp-validation").build();
+        Onboarding onboarding = Onboarding.builder().companyEmail("a@example.com").status(OnboardingStatus.PENDING).build();
         when(onboardingRepository.findById("a@example.com")).thenReturn(Optional.of(onboarding));
         when(onboardingOtpRepository.findByOtpIdAndCompanyEmail("vrfk-token", "a@example.com"))
                 .thenReturn(Optional.of(validatedOtp()));
@@ -132,7 +135,7 @@ class OnboardingServiceTest {
 
     @Test
     void register_throwsDataIntegrityViolation_whenAlreadyRegistered() {
-        Onboarding onboarding = Onboarding.builder().companyEmail("a@example.com").status("otp-validated").build();
+        Onboarding onboarding = Onboarding.builder().companyEmail("a@example.com").status(OnboardingStatus.OTP_VALIDATED).build();
         when(onboardingRepository.findById("a@example.com")).thenReturn(Optional.of(onboarding));
         when(onboardingOtpRepository.findByOtpIdAndCompanyEmail("vrfk-token", "a@example.com"))
                 .thenReturn(Optional.of(validatedOtp()));
@@ -146,7 +149,7 @@ class OnboardingServiceTest {
 
     @Test
     void register_throwsInvalidOtp_whenVrfkTokenDoesNotMatchAValidatedOtp() {
-        Onboarding onboarding = Onboarding.builder().companyEmail("a@example.com").status("active").build();
+        Onboarding onboarding = Onboarding.builder().companyEmail("a@example.com").status(OnboardingStatus.PENDING).build();
         when(onboardingRepository.findById("a@example.com")).thenReturn(Optional.of(onboarding));
         when(onboardingOtpRepository.findByOtpIdAndCompanyEmail("vrfk-token", "a@example.com"))
                 .thenReturn(Optional.empty());
@@ -159,10 +162,10 @@ class OnboardingServiceTest {
 
     @Test
     void register_throwsInvalidOtp_whenOtpExistsButNotYetValidated() {
-        Onboarding onboarding = Onboarding.builder().companyEmail("a@example.com").status("active").build();
+        Onboarding onboarding = Onboarding.builder().companyEmail("a@example.com").status(OnboardingStatus.PENDING).build();
         when(onboardingRepository.findById("a@example.com")).thenReturn(Optional.of(onboarding));
         OnboardingOtp otp = OnboardingOtp.builder()
-                .otpId("vrfk-token").companyEmail("a@example.com").status("created").build();
+                .otpId("vrfk-token").companyEmail("a@example.com").status(OnboardingOtpStatus.CREATED).build();
         when(onboardingOtpRepository.findByOtpIdAndCompanyEmail("vrfk-token", "a@example.com"))
                 .thenReturn(Optional.of(otp));
 
@@ -174,7 +177,7 @@ class OnboardingServiceTest {
 
     @Test
     void register_neverPersistsTheRawPassword_andMarksOnboardingCompleted() {
-        Onboarding onboarding = Onboarding.builder().companyEmail("a@example.com").status("otp-validated").build();
+        Onboarding onboarding = Onboarding.builder().companyEmail("a@example.com").status(OnboardingStatus.OTP_VALIDATED).build();
         when(onboardingRepository.findById("a@example.com")).thenReturn(Optional.of(onboarding));
         when(onboardingOtpRepository.findByOtpIdAndCompanyEmail("vrfk-token", "a@example.com"))
                 .thenReturn(Optional.of(validatedOtp()));
@@ -190,20 +193,20 @@ class OnboardingServiceTest {
         assertThat(saved.getFullName()).isEqualTo("Full Name");
         assertThat(saved.getAccountName()).isEqualTo("acme");
 
-        assertThat(onboarding.getStatus()).isEqualTo("completed");
+        assertThat(onboarding.getStatus()).isEqualTo(OnboardingStatus.COMPLETED);
         ArgumentCaptor<Onboarding> onboardingCaptor = ArgumentCaptor.forClass(Onboarding.class);
         verify(onboardingRepository).save(onboardingCaptor.capture());
         assertThat(onboardingCaptor.getValue()).isSameAs(onboarding);
     }
 
-    private static OnboardingService.RegistrationCommand command() {
-        return new OnboardingService.RegistrationCommand(
+    private static OnboardingRegistrationCommand command() {
+        return new OnboardingRegistrationCommand(
                 "vrfk-token", "a@example.com", "Full Name", "raw-password", "acme");
     }
 
     private static OnboardingOtp validatedOtp() {
         return OnboardingOtp.builder()
-                .otpId("vrfk-token").companyEmail("a@example.com").status("validated").build();
+                .otpId("vrfk-token").companyEmail("a@example.com").status(OnboardingOtpStatus.VALIDATED).build();
     }
 
 }

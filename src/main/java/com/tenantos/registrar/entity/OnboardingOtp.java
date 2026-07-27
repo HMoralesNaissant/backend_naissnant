@@ -1,7 +1,10 @@
 package com.tenantos.registrar.entity;
 
+import com.tenantos.registrar.enums.OnboardingOtpStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import lombok.Builder.Default;
@@ -34,9 +37,10 @@ public class OnboardingOtp extends BaseAuditFields {
     @Column(name = "code_hash", length = 64, nullable = false)
     private String codeHash;
 
+    @Enumerated(EnumType.STRING)
     @Column(name = "status", length = 20, nullable = false)
     @Default
-    private String status = "created";
+    private OnboardingOtpStatus status = OnboardingOtpStatus.CREATED;
 
     @Column(name = "attempts", nullable = false)
     @Default

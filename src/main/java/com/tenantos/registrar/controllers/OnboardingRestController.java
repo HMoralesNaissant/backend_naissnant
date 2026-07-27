@@ -1,9 +1,6 @@
 package com.tenantos.registrar.controllers;
 
-import com.tenantos.registrar.domain.request.AccountRegistrationRequest;
-import com.tenantos.registrar.domain.request.OnboardingRequest;
-import com.tenantos.registrar.domain.request.OtpValidationRequest;
-import com.tenantos.registrar.domain.request.ResendCodeRequest;
+import com.tenantos.registrar.domain.request.*;
 import com.tenantos.registrar.domain.response.AccountRegistrationResponse;
 import com.tenantos.registrar.domain.response.ValidateOtpResponse;
 import com.tenantos.registrar.entity.Onboarding;
@@ -59,7 +56,8 @@ public class OnboardingRestController {
     long ttlSeconds = onboardingOnFlightTokenService.getTtlSeconds();
 
     ResponseCookie cookie =
-        ResponseCookie.from(onboardingOnFlightTokenService.getOnboardingSessionTokenCookieName(), rawToken)
+        ResponseCookie.from(
+                onboardingOnFlightTokenService.getOnboardingSessionTokenCookieName(), rawToken)
             .httpOnly(true)
             .secure(request.isSecure())
             .sameSite("Lax")
@@ -120,8 +118,6 @@ public class OnboardingRestController {
     return ResponseEntity.status(HttpStatus.CREATED).body(saved);
   }
 
-
-
   @Operation(
       summary = "Validate the emailed OTP code",
       description =
@@ -160,7 +156,8 @@ public class OnboardingRestController {
         @ApiResponse(responseCode = "200", description = "Resent", content = @Content),
         @ApiResponse(
             responseCode = "400",
-            description = "Bad Request - no onboarding record for company_email, or otpType mismatch",
+            description =
+                "Bad Request - no onboarding record for company_email, or otpType mismatch",
             content = @Content),
         @ApiResponse(
             responseCode = "403",
@@ -173,7 +170,7 @@ public class OnboardingRestController {
       })
   @PostMapping("/{type}/resend")
   public ResponseEntity<?> resendCode(
-      @PathVariable String type, @Valid @RequestBody ResendCodeRequest request) {
+      @PathVariable String type, @Valid @RequestBody ResendCodeCommand request) {
     onboardingTokenService.resendCode(
         new OnboardingOtpService.ResendCodeCommand(request.companyEmail(), type));
     return ResponseEntity.ok().build();
@@ -209,7 +206,7 @@ public class OnboardingRestController {
       @Valid @RequestBody AccountRegistrationRequest request, HttpServletRequest servletRequest) {
     TenantsRegistration saved =
         onboardingService.register(
-            new OnboardingService.RegistrationCommand(
+            new OnboardingRegistrationCommand(
                 request.vrfkToken(),
                 request.companyEmail(),
                 request.fullName(),
@@ -232,7 +229,7 @@ public class OnboardingRestController {
                 saved.getCompanyEmail(),
                 saved.getFullName(),
                 saved.getAccountName(),
-                saved.getStatus()));
+                saved.getStatus().name()));
   }
 
   private Map<String, Object> getUserClientDetails(HttpServletRequest request) {

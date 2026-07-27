@@ -3,6 +3,7 @@ package com.tenantos.registrar.services;
 import com.tenantos.registrar.domain.response.ValidateOtpResponse;
 import com.tenantos.registrar.entity.Onboarding;
 import com.tenantos.registrar.entity.OnboardingOtp;
+import com.tenantos.registrar.enums.OnboardingStatus;
 import com.tenantos.registrar.exceptions.InvalidOtpException;
 import com.tenantos.registrar.repository.OnboardingOtpRepository;
 import com.tenantos.registrar.repository.OnboardingRepository;
@@ -16,6 +17,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.Optional;
 
 /**
  * Issues and consumes short-lived, single-use preflight tokens that gate every endpoint under
@@ -57,6 +59,7 @@ public class OnboardingOtpService {
    */
   @Transactional
   public ValidateOtpResponse validateOtp(OtpValidationCommand command) {
+
     Onboarding onboarding =
         onboardingRepository
             .findById(command.companyEmail())
@@ -66,7 +69,7 @@ public class OnboardingOtpService {
     if (!onboarding.getOtpType().equals(command.type())) {
       throw new InvalidOtpException("otpType mismatch for this company_email");
     }
-    if (!"pending".equals(onboarding.getStatus())) {
+    if (!OnboardingStatus.PENDING.equals(onboarding.getStatus())) {
       throw new InvalidOtpException("Onboarding is not awaiting OTP validation");
     }
 
@@ -78,9 +81,10 @@ public class OnboardingOtpService {
 
     OnboardingOtp otp =
         otpRepository
-            .findByCompanyEmail(command.companyEmail())
+            .findByCompanyEmailAndCreated(command.companyEmail())
             .orElseThrow(
                 () -> new InvalidOtpException("No OTP code was issued for this company_email"));
+
     if (!otp.getCodeHash().equals(hash(command.code()))) {
       throw new InvalidOtpException("Invalid OTP code");
     }
@@ -90,14 +94,14 @@ public class OnboardingOtpService {
       throw new InvalidOtpException("OTP code was already validated");
     }
 
-    onboarding.setStatus("otp-validated");
+    onboarding.setStatus(OnboardingStatus.OTP_VALIDATED);
     onboardingRepository.save(onboarding);
-    return new ValidateOtpResponse(otp.getStatus(), otp.getOtpId());
+    return new ValidateOtpResponse(otp.getStatus().name(), otp.getOtpId());
   }
 
   /**
-   * Input to resendCode - mirrors OtpValidationCommand, combining the body's companyEmail with
-   * the {type} path variable.
+   * Input to resendCode - mirrors OtpValidationCommand, combining the body's companyEmail with the
+   * {type} path variable.
    */
   public record ResendCodeCommand(String companyEmail, String type) {}
 

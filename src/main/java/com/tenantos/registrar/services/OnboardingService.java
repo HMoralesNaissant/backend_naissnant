@@ -1,8 +1,11 @@
 package com.tenantos.registrar.services;
 
+import com.tenantos.registrar.domain.request.OnboardingRegistrationCommand;
 import com.tenantos.registrar.entity.Onboarding;
 import com.tenantos.registrar.entity.OnboardingOtp;
 import com.tenantos.registrar.entity.TenantsRegistration;
+import com.tenantos.registrar.enums.OnboardingOtpStatus;
+import com.tenantos.registrar.enums.OnboardingStatus;
 import com.tenantos.registrar.exceptions.InvalidOtpException;
 import com.tenantos.registrar.repository.*;
 import lombok.Getter;
@@ -14,6 +17,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
@@ -57,8 +61,17 @@ public class OnboardingService {
     // Invalidate previous otp codes.
     onboardingOtpRepository.markInvalidated(onboarding.getCompanyEmail(), Instant.now());
 
+    //If email is already requested, let's generate a new token and send it
+    Optional<Onboarding> prevRegistration =
+        onboardingRepository.findById(onboarding.getCompanyEmail());
+    if (prevRegistration.isPresent()
+        && OnboardingStatus.PENDING.equals(prevRegistration.get().getStatus())) {
+      otpEmailService.generateAndSend(prevRegistration.get());
+      return prevRegistration.get();
+    }
+
     // status/otpDetails are server-controlled, never trusted from the caller
-    onboarding.setStatus("pending");
+    onboarding.setStatus(OnboardingStatus.PENDING);
     onboarding.setOtpDetails("{}");
 
     Onboarding saved = onboardingRepository.save(onboarding);
@@ -67,24 +80,14 @@ public class OnboardingService {
   }
 
   /**
-   * Input to register - the service defines its own command type rather than taking
-   * vrfkToken/companyEmail/fullName/password/accountName as five positional strings.
-   */
-  public record RegistrationCommand(
-      String vrfkToken,
-      String companyEmail,
-      String fullName,
-      String password,
-      String accountName) {}
-
-  /**
    * Completes the onboarding funnel: requires the company_email's onboarding record to already be
-   * OTP-verified (status "active"), that vrfkToken identifies a validated onboarding_otp row for
-   * the same company_email, creates the tenant account with a hashed password, and marks the
-   * onboarding record "completed".
+   * OTP-verified (status {@link com.tenantos.registrar.enums.OnboardingStatus#OTP_VALIDATED}),
+   * that vrfkToken identifies a validated onboarding_otp row for the same company_email, creates
+   * the tenant account with a hashed password, and marks the onboarding record
+   * {@link com.tenantos.registrar.enums.OnboardingStatus#COMPLETED}.
    */
   @Transactional
-  public TenantsRegistration register(RegistrationCommand command) {
+  public TenantsRegistration register(OnboardingRegistrationCommand command) {
     Onboarding onboarding =
         onboardingRepository
             .findById(command.companyEmail())
@@ -98,11 +101,11 @@ public class OnboardingService {
                 () ->
                     new InvalidOtpException(
                         "Verification token is invalid for this company_email"));
-    if (!"validated".equals(otp.getStatus())) {
+    if (!OnboardingOtpStatus.VALIDATED.equals(otp.getStatus())) {
       throw new InvalidOtpException("Verification token has not been validated");
     }
 
-    if (!"otp-validated".equals(onboarding.getStatus())) {
+    if (!OnboardingStatus.OTP_VALIDATED.equals(onboarding.getStatus())) {
       throw new IllegalStateException("Onboarding is not yet verified for this company_email");
     }
     if (tenantsRegistrationRepository.existsById(command.companyEmail())) {
@@ -119,7 +122,7 @@ public class OnboardingService {
                 .accountName(command.accountName())
                 .build());
 
-    onboarding.setStatus("completed");
+    onboarding.setStatus(OnboardingStatus.COMPLETED);
     onboardingRepository.save(onboarding);
 
     return saved;
