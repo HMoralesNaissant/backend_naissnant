@@ -1,8 +1,10 @@
 package com.tenantos.registrar.services;
 
+import com.tenantos.registrar.domain.request.ResendCodeCommand;
 import com.tenantos.registrar.domain.response.ValidateOtpResponse;
 import com.tenantos.registrar.entity.Onboarding;
 import com.tenantos.registrar.entity.OnboardingOtp;
+import com.tenantos.registrar.enums.OnboardingOtpStatus;
 import com.tenantos.registrar.enums.OnboardingStatus;
 import com.tenantos.registrar.exceptions.InvalidOtpException;
 import com.tenantos.registrar.repository.OnboardingOtpRepository;
@@ -37,7 +39,7 @@ public class OnboardingOtpService {
   private final OnboardingRepository onboardingRepository;
   private final TenantsRegistrationRepository tenantsRegistrationRepository;
   private final OtpAttemptTracker otpAttemptTracker;
-  private final OtpEmailService otpEmailService;
+  private final OnboardingEmailService onboardingEmailService;
 
   /**
    * Input to validateOtp - the service defines its own command type rather than taking
@@ -46,8 +48,8 @@ public class OnboardingOtpService {
   public record OtpValidationCommand(String companyEmail, String type, String code) {}
 
   /**
-   * Validates the OTP code emailed during onboarding (see OtpEmailService). Distinct from the
-   * preflight session token above - this checks the 6-digit code the user types in, not the
+   * Validates the OTP code emailed during onboarding (see OnboardingEmailService). Distinct from
+   * the preflight session token above - this checks the 6-digit code the user types in, not the
    * httpOnly cookie. Lives here because the whole /onboarding funnel's "token" concepts are
    * consolidated in this service.
    *
@@ -64,34 +66,54 @@ public class OnboardingOtpService {
         onboardingRepository
             .findById(command.companyEmail())
             .orElseThrow(
-                () -> new InvalidOtpException("No onboarding record for this company_email"));
+                () ->
+                    new InvalidOtpException(
+                        String.format(
+                            "Could not find a valid onboarding record for company_email %s",
+                            command.companyEmail())));
 
     if (!onboarding.getOtpType().equals(command.type())) {
-      throw new InvalidOtpException("otpType mismatch for this company_email");
+      throw new InvalidOtpException(
+          String.format("otpType mismatch for this company_email %s", command.companyEmail()));
     }
     if (!OnboardingStatus.PENDING.equals(onboarding.getStatus())) {
-      throw new InvalidOtpException("Onboarding is not awaiting OTP validation");
+      throw new InvalidOtpException(
+          String.format(
+              "Otp Code %s was already validated for email %s",
+              command.code(), onboarding.getCompanyEmail()));
     }
 
     Instant now = Instant.now();
     int attempted = otpAttemptTracker.recordAttempt(command.companyEmail(), now, otpMaxAttempts);
     if (attempted != 1) {
-      throw new InvalidOtpException("OTP code is expired or too many attempts have been made");
+      throw new InvalidOtpException(
+          String.format(
+              "OTP code is expired or too many attempts have been made for company_email %s",
+              command.companyEmail()));
     }
 
+    // There should be only one opt token in the DB with status CREATED
     OnboardingOtp otp =
         otpRepository
             .findByCompanyEmailAndCreated(command.companyEmail())
             .orElseThrow(
-                () -> new InvalidOtpException("No OTP code was issued for this company_email"));
+                () ->
+                    new InvalidOtpException(
+                        String.format(
+                            "No valid OTP code found for company_email %s",
+                            command.companyEmail())));
 
     if (!otp.getCodeHash().equals(hash(command.code()))) {
-      throw new InvalidOtpException("Invalid OTP code");
+      throw new InvalidOtpException(
+          String.format(
+              "OTP code does not match for this company_email %s", command.companyEmail()));
     }
 
     int validated = otpRepository.markValidated(command.companyEmail(), now);
     if (validated != 1) {
-      throw new InvalidOtpException("OTP code was already validated");
+      throw new InvalidOtpException(
+          String.format(
+              "OTP code was already validated for company_email %s", command.companyEmail()));
     }
 
     onboarding.setStatus(OnboardingStatus.OTP_VALIDATED);
@@ -100,10 +122,56 @@ public class OnboardingOtpService {
   }
 
   /**
-   * Input to resendCode - mirrors OtpValidationCommand, combining the body's companyEmail with the
-   * {type} path variable.
+   * Validates the OTP via the emailed verify link instead of a typed code: the link carries the OTP
+   * row's own id (vrfkToken) as proof, rather than the 6-digit code. Same status checks as
+   * validateOtp (onboarding must be PENDING, OTP row must still be CREATED and unexpired), just
+   * matched by otpId+companyEmail instead of a code hash - so there's no typed-code attempt cap to
+   * enforce here.
    */
-  public record ResendCodeCommand(String companyEmail, String type) {}
+  @Transactional
+  public void validateOtpToken(String companyEmail, String verificationToken) {
+    Onboarding onboarding =
+        onboardingRepository
+            .findById(companyEmail)
+            .orElseThrow(
+                () ->
+                    new InvalidOtpException(
+                        String.format(
+                            "No onboarding record for this company_email %s", companyEmail)));
+
+    if (!OnboardingStatus.PENDING.equals(onboarding.getStatus())) {
+      throw new InvalidOtpException(
+          String.format(
+              "Onboarding is not awaiting OTP validation for company_email %s", companyEmail));
+    }
+
+    OnboardingOtp otp =
+        otpRepository
+            .findByOtpIdAndCompanyEmail(verificationToken, companyEmail)
+            .orElseThrow(
+                () ->
+                    new InvalidOtpException(
+                        String.format(
+                            "Verification token is invalid for company_email %s", companyEmail)));
+
+    if (!OnboardingOtpStatus.CREATED.equals(otp.getStatus())) {
+      throw new InvalidOtpException(
+          String.format("OTP code was already validated for company_email %s", companyEmail));
+    }
+    if (otp.getExpiresAt().isBefore(Instant.now())) {
+      throw new InvalidOtpException(
+          String.format("OTP code is expired for company_email %s", companyEmail));
+    }
+
+    int validated = otpRepository.markValidated(companyEmail, Instant.now());
+    if (validated != 1) {
+      throw new InvalidOtpException(
+          String.format("OTP code was already validated for company_email %s", companyEmail));
+    }
+
+    onboarding.setStatus(OnboardingStatus.OTP_VALIDATED);
+    onboardingRepository.save(onboarding);
+  }
 
   /**
    * Resends the OTP code for an existing, not-yet-registered onboarding record. Invalidates any
@@ -129,14 +197,17 @@ public class OnboardingOtpService {
             .orElseThrow(
                 () ->
                     new IllegalArgumentException(
-                        "No onboarding record for this company_email, cannot resend code"));
+                        String.format(
+                            "No onboarding record for this company_email %s, cannot resend code",
+                            command.companyEmail())));
 
     if (!onboarding.getOtpType().equals(command.type())) {
-      throw new InvalidOtpException("otpType mismatch for this company_email");
+      throw new InvalidOtpException(
+          String.format("otpType mismatch for this company_email %s", command.companyEmail()));
     }
 
     otpRepository.markInvalidated(command.companyEmail(), Instant.now());
-    otpEmailService.generateAndSend(onboarding);
+    onboardingEmailService.generateAndSend(onboarding);
     return true;
   }
 

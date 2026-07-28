@@ -1,8 +1,10 @@
 package com.tenantos.registrar.services;
 
+import com.tenantos.registrar.domain.request.ResendCodeCommand;
 import com.tenantos.registrar.entity.Onboarding;
 import com.tenantos.registrar.entity.OnboardingOtp;
 import com.tenantos.registrar.entity.OnboardingToken;
+import com.tenantos.registrar.enums.OnboardingOtpStatus;
 import com.tenantos.registrar.enums.OnboardingStatus;
 import com.tenantos.registrar.exceptions.InvalidOnboardingTokenException;
 import com.tenantos.registrar.exceptions.InvalidOtpException;
@@ -49,9 +51,8 @@ class OnboardingOtpCodeServiceTest {
   @Mock private OnboardingRepository onboardingRepository;
   @Mock private TenantsRegistrationRepository tenantsRegistrationRepository;
   @Mock private OtpAttemptTracker otpAttemptTracker;
-  @Mock private OtpEmailService otpEmailService;
-  @Spy
-  private ObjectMapper objectMapper;
+  @Mock private OnboardingEmailService onboardingEmailService;
+  @Spy private ObjectMapper objectMapper;
 
   @InjectMocks private OnboardingOnFlightTokenService onboardingOnFlightTokenService;
 
@@ -274,7 +275,7 @@ class OnboardingOtpCodeServiceTest {
             .companyEmail("a@example.com")
             .codeHash(HashUtils.sha256Hex("999999"))
             .build();
-    when(otpRepository.findByCompanyEmail("a@example.com")).thenReturn(Optional.of(otp));
+    when(otpRepository.findByCompanyEmailAndCreated("a@example.com")).thenReturn(Optional.of(otp));
 
     assertThatThrownBy(
             () ->
@@ -294,7 +295,7 @@ class OnboardingOtpCodeServiceTest {
     when(onboardingRepository.findById("a@example.com"))
         .thenReturn(Optional.of(pendingOnboarding()));
     when(otpAttemptTracker.recordAttempt(anyString(), any(), anyInt())).thenReturn(1);
-    when(otpRepository.findByCompanyEmail("a@example.com")).thenReturn(Optional.empty());
+    when(otpRepository.findByCompanyEmailAndCreated("a@example.com")).thenReturn(Optional.empty());
 
     assertThatThrownBy(
             () ->
@@ -314,7 +315,7 @@ class OnboardingOtpCodeServiceTest {
             .companyEmail("a@example.com")
             .codeHash(HashUtils.sha256Hex("123456"))
             .build();
-    when(otpRepository.findByCompanyEmail("a@example.com")).thenReturn(Optional.of(otp));
+    when(otpRepository.findByCompanyEmailAndCreated("a@example.com")).thenReturn(Optional.of(otp));
     when(otpRepository.markValidated(eq("a@example.com"), any())).thenReturn(0);
 
     assertThatThrownBy(
@@ -338,7 +339,7 @@ class OnboardingOtpCodeServiceTest {
             .companyEmail("a@example.com")
             .codeHash(HashUtils.sha256Hex("123456"))
             .build();
-    when(otpRepository.findByCompanyEmail("a@example.com")).thenReturn(Optional.of(otp));
+    when(otpRepository.findByCompanyEmailAndCreated("a@example.com")).thenReturn(Optional.of(otp));
     when(otpRepository.markValidated(eq("a@example.com"), any())).thenReturn(1);
 
     onboardingOtpService.validateOtp(
@@ -348,29 +349,120 @@ class OnboardingOtpCodeServiceTest {
     verify(onboardingRepository).save(onboarding);
   }
 
+  // --- validateOtpToken ---
+
+  @Test
+  void validateOtpToken_throws_whenOnboardingRecordNotFound() {
+    when(onboardingRepository.findById("a@example.com")).thenReturn(Optional.empty());
+
+    assertThatThrownBy(() -> onboardingOtpService.validateOtpToken("a@example.com", "vftk-value"))
+        .isInstanceOf(InvalidOtpException.class);
+
+    verify(otpRepository, never()).findByOtpIdAndCompanyEmail(anyString(), anyString());
+  }
+
+  @Test
+  void validateOtpToken_throws_whenOnboardingNotAwaitingOtpValidation() {
+    Onboarding alreadyValidated = pendingOnboarding();
+    alreadyValidated.setStatus(OnboardingStatus.OTP_VALIDATED);
+    when(onboardingRepository.findById("a@example.com")).thenReturn(Optional.of(alreadyValidated));
+
+    assertThatThrownBy(() -> onboardingOtpService.validateOtpToken("a@example.com", "vftk-value"))
+        .isInstanceOf(InvalidOtpException.class)
+        .hasMessageContaining("not awaiting OTP validation");
+  }
+
+  @Test
+  void validateOtpToken_throws_whenTokenDoesNotMatchAnyOtpRow() {
+    when(onboardingRepository.findById("a@example.com"))
+        .thenReturn(Optional.of(pendingOnboarding()));
+    when(otpRepository.findByOtpIdAndCompanyEmail("vftk-value", "a@example.com"))
+        .thenReturn(Optional.empty());
+
+    assertThatThrownBy(() -> onboardingOtpService.validateOtpToken("a@example.com", "vftk-value"))
+        .isInstanceOf(InvalidOtpException.class)
+        .hasMessageContaining("invalid");
+  }
+
+  @Test
+  void validateOtpToken_throws_whenOtpAlreadyValidated() {
+    when(onboardingRepository.findById("a@example.com"))
+        .thenReturn(Optional.of(pendingOnboarding()));
+    OnboardingOtp otp =
+        OnboardingOtp.builder()
+            .otpId("vftk-value")
+            .companyEmail("a@example.com")
+            .status(OnboardingOtpStatus.VALIDATED)
+            .expiresAt(Instant.now().plusSeconds(600))
+            .build();
+    when(otpRepository.findByOtpIdAndCompanyEmail("vftk-value", "a@example.com"))
+        .thenReturn(Optional.of(otp));
+
+    assertThatThrownBy(() -> onboardingOtpService.validateOtpToken("a@example.com", "vftk-value"))
+        .isInstanceOf(InvalidOtpException.class)
+        .hasMessageContaining("already validated");
+  }
+
+  @Test
+  void validateOtpToken_throws_whenOtpExpired() {
+    when(onboardingRepository.findById("a@example.com"))
+        .thenReturn(Optional.of(pendingOnboarding()));
+    OnboardingOtp otp =
+        OnboardingOtp.builder()
+            .otpId("vftk-value")
+            .companyEmail("a@example.com")
+            .status(OnboardingOtpStatus.CREATED)
+            .expiresAt(Instant.now().minusSeconds(1))
+            .build();
+    when(otpRepository.findByOtpIdAndCompanyEmail("vftk-value", "a@example.com"))
+        .thenReturn(Optional.of(otp));
+
+    assertThatThrownBy(() -> onboardingOtpService.validateOtpToken("a@example.com", "vftk-value"))
+        .isInstanceOf(InvalidOtpException.class)
+        .hasMessageContaining("expired");
+
+    verify(otpRepository, never()).markValidated(anyString(), any());
+  }
+
+  @Test
+  void validateOtpToken_succeeds_andFlipsOnboardingStatusToOtpValidated() {
+    Onboarding onboarding = pendingOnboarding();
+    when(onboardingRepository.findById("a@example.com")).thenReturn(Optional.of(onboarding));
+    OnboardingOtp otp =
+        OnboardingOtp.builder()
+            .otpId("vftk-value")
+            .companyEmail("a@example.com")
+            .status(OnboardingOtpStatus.CREATED)
+            .expiresAt(Instant.now().plusSeconds(600))
+            .build();
+    when(otpRepository.findByOtpIdAndCompanyEmail("vftk-value", "a@example.com"))
+        .thenReturn(Optional.of(otp));
+    when(otpRepository.markValidated(eq("a@example.com"), any())).thenReturn(1);
+
+    onboardingOtpService.validateOtpToken("a@example.com", "vftk-value");
+
+    assertThat(onboarding.getStatus()).isEqualTo(OnboardingStatus.OTP_VALIDATED);
+    verify(onboardingRepository).save(onboarding);
+  }
+
   // --- resendCode ---
 
   @Test
   void resendCode_throwsIllegalArgument_whenCompanyEmailIsNull() {
-    assertThatThrownBy(
-            () ->
-                onboardingOtpService.resendCode(
-                    new OnboardingOtpService.ResendCodeCommand(null, "code")))
+    assertThatThrownBy(() -> onboardingOtpService.resendCode(new ResendCodeCommand(null, "code")))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("companyEmail is required");
 
-    verify(otpEmailService, never()).generateAndSend(any());
+    verify(onboardingEmailService, never()).generateAndSend(any());
   }
 
   @Test
   void resendCode_throwsIllegalArgument_whenCompanyEmailIsBlank() {
-    assertThatThrownBy(
-            () ->
-                onboardingOtpService.resendCode(
-                    new OnboardingOtpService.ResendCodeCommand("   ", "code")))
-        .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(() -> onboardingOtpService.resendCode(new ResendCodeCommand("   ", "code")))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("companyEmail is required");
 
-    verify(otpEmailService, never()).generateAndSend(any());
+    verify(onboardingEmailService, never()).generateAndSend(any());
   }
 
   @Test
@@ -378,13 +470,11 @@ class OnboardingOtpCodeServiceTest {
     when(tenantsRegistrationRepository.existsById("a@example.com")).thenReturn(true);
 
     assertThatThrownBy(
-            () ->
-                onboardingOtpService.resendCode(
-                    new OnboardingOtpService.ResendCodeCommand("a@example.com", "code")))
+            () -> onboardingOtpService.resendCode(new ResendCodeCommand("a@example.com", "code")))
         .isInstanceOf(DataIntegrityViolationException.class);
 
     verify(onboardingRepository, never()).findById(anyString());
-    verify(otpEmailService, never()).generateAndSend(any());
+    verify(onboardingEmailService, never()).generateAndSend(any());
   }
 
   @Test
@@ -393,13 +483,11 @@ class OnboardingOtpCodeServiceTest {
     when(onboardingRepository.findById("a@example.com")).thenReturn(Optional.empty());
 
     assertThatThrownBy(
-            () ->
-                onboardingOtpService.resendCode(
-                    new OnboardingOtpService.ResendCodeCommand("a@example.com", "code")))
+            () -> onboardingOtpService.resendCode(new ResendCodeCommand("a@example.com", "code")))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("No onboarding record");
 
-    verify(otpEmailService, never()).generateAndSend(any());
+    verify(onboardingEmailService, never()).generateAndSend(any());
   }
 
   @Test
@@ -409,14 +497,12 @@ class OnboardingOtpCodeServiceTest {
         .thenReturn(Optional.of(pendingOnboarding()));
 
     assertThatThrownBy(
-            () ->
-                onboardingOtpService.resendCode(
-                    new OnboardingOtpService.ResendCodeCommand("a@example.com", "sms")))
+            () -> onboardingOtpService.resendCode(new ResendCodeCommand("a@example.com", "sms")))
         .isInstanceOf(InvalidOtpException.class)
         .hasMessageContaining("otpType mismatch");
 
     verify(otpRepository, never()).markInvalidated(anyString(), any());
-    verify(otpEmailService, never()).generateAndSend(any());
+    verify(onboardingEmailService, never()).generateAndSend(any());
   }
 
   @Test
@@ -426,11 +512,10 @@ class OnboardingOtpCodeServiceTest {
     when(onboardingRepository.findById("a@example.com")).thenReturn(Optional.of(onboarding));
 
     boolean result =
-        onboardingOtpService.resendCode(
-            new OnboardingOtpService.ResendCodeCommand("a@example.com", "code"));
+        onboardingOtpService.resendCode(new ResendCodeCommand("a@example.com", "code"));
 
     assertThat(result).isTrue();
     verify(otpRepository).markInvalidated(eq("a@example.com"), any());
-    verify(otpEmailService).generateAndSend(onboarding);
+    verify(onboardingEmailService).generateAndSend(onboarding);
   }
 }

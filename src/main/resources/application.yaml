@@ -66,6 +66,8 @@ fe:
     token-ttl-seconds: ${ONBOARDING_TOKEN_TTL_SECONDS:3600}
     otp-ttl-seconds: ${ONBOARDING_OTP_TTL_SECONDS:600}
     otp-max-attempts: ${ONBOARDING_OTP_MAX_ATTEMPTS:5}
+    otp-generation-max-count: ${ONBOARDING_OTP_GENERATION_MAX_COUNT:3}
+    otp-generation-window-seconds: ${ONBOARDING_OTP_GENERATION_WINDOW_SECONDS:3600}
     otp-from-address: ${ONBOARDING_OTP_FROM_ADDRESS:no-reply@tenantos.local}
     verify-url-template: ${ONBOARDING_VERIFY_URL_TEMPLATE:http://localhost:3000/onboarding/verify?email={email}&vftk={vftk}}
 

@@ -2,6 +2,7 @@ package com.tenantos.registrar.services;
 
 import com.tenantos.registrar.entity.Onboarding;
 import com.tenantos.registrar.entity.OnboardingOtp;
+import com.tenantos.registrar.entity.TenantsRegistration;
 import com.tenantos.registrar.repository.OnboardingOtpRepository;
 import com.tenantos.registrar.utils.HashUtils;
 import jakarta.mail.Session;
@@ -23,15 +24,17 @@ import java.time.Instant;
 import java.util.Properties;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
-class OtpEmailServiceTest {
+class OnboardingEmailServiceTest {
 
   private static final String VERIFY_URL_TEMPLATE =
       "http://localhost:3000/onboarding/verify?email={email}&vftk={vftk}";
@@ -40,24 +43,26 @@ class OtpEmailServiceTest {
   @Mock private JavaMailSender mailSender;
   @Mock private ITemplateEngine templateEngine;
 
-  @InjectMocks private OtpEmailService service;
+  @InjectMocks private OnboardingEmailService service;
 
   @BeforeEach
   void setUp() {
     ReflectionTestUtils.setField(service, "ttlSeconds", 600L);
     ReflectionTestUtils.setField(service, "fromAddress", "no-reply@tenantos.local");
     ReflectionTestUtils.setField(service, "verifyUrlTemplate", VERIFY_URL_TEMPLATE);
-    when(repository.save(any(OnboardingOtp.class)))
-        .thenAnswer(invocation -> invocation.getArgument(0));
   }
 
   private static MimeMessage newMimeMessage() {
     return new MimeMessage(Session.getInstance(new Properties()));
   }
 
+  // --- generateAndSend (OTP verification email) ---
+
   @Test
   void generateAndSend_persistsHashedCode_andRendersTheMatchingRawCodeAndVerifyLink()
       throws Exception {
+    when(repository.save(any(OnboardingOtp.class)))
+        .thenAnswer(invocation -> invocation.getArgument(0));
     Onboarding onboarding = Onboarding.builder().companyEmail("a@example.com").build();
     MimeMessage mimeMessage = newMimeMessage();
     when(mailSender.createMimeMessage()).thenReturn(mimeMessage);
@@ -98,6 +103,8 @@ class OtpEmailServiceTest {
   void generateAndSend_savesBeforeSending() throws Exception {
     // The OTP row must exist before the email goes out, otherwise a user could receive
     // (and try) a code that validateOtp has no record of yet.
+    when(repository.save(any(OnboardingOtp.class)))
+        .thenAnswer(invocation -> invocation.getArgument(0));
     Onboarding onboarding = Onboarding.builder().companyEmail("order@example.com").build();
     when(mailSender.createMimeMessage()).thenReturn(newMimeMessage());
     when(templateEngine.process(anyString(), any(Context.class))).thenReturn("<html></html>");
@@ -117,4 +124,40 @@ class OtpEmailServiceTest {
   // (the only @SpringBootTest here) had already run in the same JVM. Verified instead
   // by actually sending through Mailpit against the running app.
 
+  // --- sendAccountRegistrationInProgress ---
+
+  @Test
+  void sendAccountRegistrationInProgress_rendersTemplateWithCompanyEmail_andSendsToThatAddress()
+      throws Exception {
+    TenantsRegistration registration =
+        TenantsRegistration.builder().companyEmail("a@example.com").build();
+    MimeMessage mimeMessage = newMimeMessage();
+    when(mailSender.createMimeMessage()).thenReturn(mimeMessage);
+    ArgumentCaptor<Context> contextCaptor = ArgumentCaptor.forClass(Context.class);
+    when(templateEngine.process(
+            eq("account-registration-inprogress"), contextCaptor.capture()))
+        .thenReturn("<html>rendered</html>");
+
+    service.sendAccountRegistrationInProgress(registration);
+
+    verify(mailSender).send(mimeMessage);
+    assertThat(mimeMessage.getFrom()[0].toString()).isEqualTo("no-reply@tenantos.local");
+    assertThat(mimeMessage.getAllRecipients()[0].toString()).isEqualTo("a@example.com");
+    assertThat(mimeMessage.getSubject()).isEqualTo("Your tenantOS account setup is in progress");
+
+    assertThat(contextCaptor.getValue().getVariable("companyEmail")).isEqualTo("a@example.com");
+  }
+
+  @Test
+  void sendAccountRegistrationInProgress_doesNotThrow_whenMailSenderFails() {
+    TenantsRegistration registration =
+        TenantsRegistration.builder().companyEmail("a@example.com").build();
+    when(templateEngine.process(anyString(), any(Context.class))).thenReturn("<html></html>");
+    when(mailSender.createMimeMessage()).thenThrow(new RuntimeException("SMTP down"));
+
+    assertThatCode(() -> service.sendAccountRegistrationInProgress(registration))
+        .doesNotThrowAnyException();
+
+    verify(mailSender, never()).send(any(MimeMessage.class));
+  }
 }

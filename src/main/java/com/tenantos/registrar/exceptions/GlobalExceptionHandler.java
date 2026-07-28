@@ -1,6 +1,7 @@
 
 package com.tenantos.registrar.exceptions;
 
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -14,6 +15,7 @@ import java.util.Map;
 /**
  * Global exception handler for REST controllers.
  */
+@Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
@@ -29,6 +31,7 @@ public class GlobalExceptionHandler {
         );
         response.put("fieldErrors", fieldErrors);
 
+        log.error("Validation failed: {}", fieldErrors);
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
     }
 
@@ -38,6 +41,8 @@ public class GlobalExceptionHandler {
         response.put("status", HttpStatus.CONFLICT.value());
         response.put("error", "Conflict");
         response.put("message", ex.getMessage());
+
+        log.error("Data integrity violation: {}", ex.getMessage());
         return ResponseEntity.status(HttpStatus.CONFLICT).body(response);
     }
 
@@ -47,6 +52,8 @@ public class GlobalExceptionHandler {
         response.put("status", HttpStatus.BAD_REQUEST.value());
         response.put("error", "Bad Request");
         response.put("message", ex.getMessage());
+
+        log.error("Illegal argument: {}", ex.getMessage());
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
     }
 
@@ -56,6 +63,8 @@ public class GlobalExceptionHandler {
         response.put("status", HttpStatus.UNAUTHORIZED.value());
         response.put("error", "Unauthorized");
         response.put("message", ex.getMessage());
+
+        log.error("Invalid onboarding token: {}", ex.getMessage());
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(response);
     }
 
@@ -65,7 +74,20 @@ public class GlobalExceptionHandler {
         response.put("status", HttpStatus.BAD_REQUEST.value());
         response.put("error", "Bad Request");
         response.put("message", ex.getMessage());
+
+        log.error("Invalid OTP: {}", ex.getMessage());
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
+    }
+
+    @ExceptionHandler(OtpGenerationRateLimitedException.class)
+    public ResponseEntity<?> handleOtpGenerationRateLimited(OtpGenerationRateLimitedException ex) {
+        Map<String, Object> response = new HashMap<>();
+        response.put("status", HttpStatus.TOO_MANY_REQUESTS.value());
+        response.put("error", "Too Many Requests");
+        response.put("message", ex.getMessage());
+
+        log.error("OTP generation rate limited: {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body(response);
     }
 
     @ExceptionHandler(IllegalStateException.class)
@@ -74,6 +96,8 @@ public class GlobalExceptionHandler {
         response.put("status", HttpStatus.CONFLICT.value());
         response.put("error", "Conflict");
         response.put("message", ex.getMessage());
+
+        log.error("Illegal state: {}", ex.getMessage());
         return ResponseEntity.status(HttpStatus.CONFLICT).body(response);
     }
 
@@ -83,6 +107,8 @@ public class GlobalExceptionHandler {
         response.put("status", HttpStatus.INTERNAL_SERVER_ERROR.value());
         response.put("error", "Internal Server Error");
         response.put("message", ex.getMessage());
+
+        log.error("Unhandled exception", ex);
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
     }
 }

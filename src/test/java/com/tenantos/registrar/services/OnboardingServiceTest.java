@@ -7,9 +7,11 @@ import com.tenantos.registrar.entity.TenantsRegistration;
 import com.tenantos.registrar.enums.OnboardingOtpStatus;
 import com.tenantos.registrar.enums.OnboardingStatus;
 import com.tenantos.registrar.exceptions.InvalidOtpException;
+import com.tenantos.registrar.exceptions.OtpGenerationRateLimitedException;
 import com.tenantos.registrar.repository.OnboardingOtpRepository;
 import com.tenantos.registrar.repository.OnboardingRepository;
 import com.tenantos.registrar.repository.TenantsRegistrationRepository;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -18,12 +20,15 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -41,10 +46,16 @@ class OnboardingServiceTest {
     private PasswordEncoder passwordEncoder;
 
     @Mock
-    private OtpEmailService otpEmailService;
+    private OnboardingEmailService onboardingEmailService;
 
     @InjectMocks
     private OnboardingService service;
+
+    @BeforeEach
+    void setUp() {
+        ReflectionTestUtils.setField(service, "otpGenerationMaxCount", 3);
+        ReflectionTestUtils.setField(service, "otpGenerationWindowSeconds", 3600L);
+    }
 
     @Test
     void onboardUser_throwsIllegalArgument_whenCompanyEmailIsNull() {
@@ -54,7 +65,7 @@ class OnboardingServiceTest {
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("companyEmail is required");
 
-        verify(otpEmailService, never()).generateAndSend(any());
+        verify(onboardingEmailService, never()).generateAndSend(any());
     }
 
     @Test
@@ -74,7 +85,7 @@ class OnboardingServiceTest {
                 .isInstanceOf(DataIntegrityViolationException.class);
 
         verify(repository, never()).save(any());
-        verify(otpEmailService, never()).generateAndSend(any());
+        verify(onboardingEmailService, never()).generateAndSend(any());
     }
 
     @Test
@@ -104,10 +115,39 @@ class OnboardingServiceTest {
 
         assertThat(result).isSameAs(persisted);
         ArgumentCaptor<Onboarding> captor = ArgumentCaptor.forClass(Onboarding.class);
-        verify(otpEmailService).generateAndSend(captor.capture());
+        verify(onboardingEmailService).generateAndSend(captor.capture());
         assertThat(captor.getValue()).isSameAs(persisted);
     }
 
+    @Test
+    void onboardUser_throwsRateLimited_whenGenerationCountAtOrAboveMax_forNewRegistration() {
+        Onboarding onboarding = Onboarding.builder().companyEmail("new@example.com").build();
+        when(repository.existsById("new@example.com")).thenReturn(false);
+        when(onboardingOtpRepository.countByCompanyEmailAndCreatedAtAfter(eq("new@example.com"), any()))
+                .thenReturn(3L);
+
+        assertThatThrownBy(() -> service.onboardUser(onboarding))
+                .isInstanceOf(OtpGenerationRateLimitedException.class);
+
+        verify(onboardingOtpRepository, never()).markInvalidated(anyString(), any());
+        verify(onboardingRepository, never()).save(any());
+        verify(onboardingEmailService, never()).generateAndSend(any());
+    }
+
+    @Test
+    void onboardUser_throwsRateLimited_whenGenerationCountAtOrAboveMax_forExistingPendingRegistration() {
+        Onboarding onboarding = Onboarding.builder().companyEmail("pending@example.com").build();
+        when(repository.existsById("pending@example.com")).thenReturn(false);
+        when(onboardingOtpRepository.countByCompanyEmailAndCreatedAtAfter(eq("pending@example.com"), any()))
+                .thenReturn(5L);
+
+        assertThatThrownBy(() -> service.onboardUser(onboarding))
+                .isInstanceOf(OtpGenerationRateLimitedException.class);
+
+        verify(onboardingOtpRepository, never()).markInvalidated(anyString(), any());
+        verify(onboardingRepository, never()).findById(anyString());
+        verify(onboardingEmailService, never()).generateAndSend(any());
+    }
 
     @Test
     void register_throwsIllegalArgument_whenNoOnboardingRecordExists() {
@@ -197,6 +237,8 @@ class OnboardingServiceTest {
         ArgumentCaptor<Onboarding> onboardingCaptor = ArgumentCaptor.forClass(Onboarding.class);
         verify(onboardingRepository).save(onboardingCaptor.capture());
         assertThat(onboardingCaptor.getValue()).isSameAs(onboarding);
+
+        verify(onboardingEmailService).sendAccountRegistrationInProgress(saved);
     }
 
     private static OnboardingRegistrationCommand command() {

@@ -98,16 +98,24 @@ class OnboardingRestControllerTest {
   }
 
   @Test
+  void verifyOtpToken_delegatesToOnboardingOtpService_andReturnsNoContent() {
+    ResponseEntity<Void> result = controller.verifyOtpToken("a@example.com", "vftk-value");
+
+    assertThat(result.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
+    verify(onboardingTokenService).validateOtpToken("a@example.com", "vftk-value");
+  }
+
+  @Test
   void resendCode_delegatesToOnboardingOtpService_withTypeFromPathAndEmailFromBody() {
-    ResendCodeCommand request = new ResendCodeCommand("a@example.com");
+    ResendCodeCommand request = new ResendCodeCommand("a@example.com", "code");
     when(onboardingTokenService.resendCode(any())).thenReturn(true);
 
     ResponseEntity<?> result = controller.resendCode("code", request);
 
     assertThat(result.getStatusCode()).isEqualTo(HttpStatus.OK);
 
-    ArgumentCaptor<OnboardingOtpService.ResendCodeCommand> commandCaptor =
-        ArgumentCaptor.forClass(OnboardingOtpService.ResendCodeCommand.class);
+    ArgumentCaptor<ResendCodeCommand> commandCaptor =
+        ArgumentCaptor.forClass(ResendCodeCommand.class);
     verify(onboardingTokenService).resendCode(commandCaptor.capture());
     assertThat(commandCaptor.getValue().companyEmail()).isEqualTo("a@example.com");
     assertThat(commandCaptor.getValue().type()).isEqualTo("code");

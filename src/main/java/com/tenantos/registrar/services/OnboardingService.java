@@ -7,6 +7,7 @@ import com.tenantos.registrar.entity.TenantsRegistration;
 import com.tenantos.registrar.enums.OnboardingOtpStatus;
 import com.tenantos.registrar.enums.OnboardingStatus;
 import com.tenantos.registrar.exceptions.InvalidOtpException;
+import com.tenantos.registrar.exceptions.OtpGenerationRateLimitedException;
 import com.tenantos.registrar.repository.*;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
@@ -31,11 +32,17 @@ public class OnboardingService {
   @Getter
   private long ttlSeconds;
 
+  @Value("${fe.onboarding.otp-generation-max-count}")
+  private int otpGenerationMaxCount;
+
+  @Value("${fe.onboarding.otp-generation-window-seconds}")
+  private long otpGenerationWindowSeconds;
+
   private final TenantsRegistrationRepository tenantsRegistrationRepository;
   private final OnboardingRepository onboardingRepository;
   private final OnboardingOtpRepository onboardingOtpRepository;
   private final PasswordEncoder passwordEncoder;
-  private final OtpEmailService otpEmailService;
+  private final OnboardingEmailService onboardingEmailService;
 
   /**
    * Create a new onboarding record and email its OTP verification code. The onboarding table uses
@@ -58,33 +65,52 @@ public class OnboardingService {
               onboarding.getCompanyEmail()));
     }
 
+    enforceOtpGenerationRateLimit(onboarding.getCompanyEmail());
+
     // Invalidate previous otp codes.
     onboardingOtpRepository.markInvalidated(onboarding.getCompanyEmail(), Instant.now());
 
-    //If email is already requested, let's generate a new token and send it
+    Onboarding result;
+    // If email is already requested, let's generate a new token and send it
     Optional<Onboarding> prevRegistration =
         onboardingRepository.findById(onboarding.getCompanyEmail());
     if (prevRegistration.isPresent()
         && OnboardingStatus.PENDING.equals(prevRegistration.get().getStatus())) {
-      otpEmailService.generateAndSend(prevRegistration.get());
-      return prevRegistration.get();
+      result = prevRegistration.get();
+    } else {
+      // status/otpDetails are server-controlled, never trusted from the caller
+      onboarding.setStatus(OnboardingStatus.PENDING);
+      onboarding.setOtpDetails("{}");
+      result = onboardingRepository.save(onboarding);
     }
+    //Generate and send code if needed
+    onboardingEmailService.generateAndSend(result);
+    return result;
+  }
 
-    // status/otpDetails are server-controlled, never trusted from the caller
-    onboarding.setStatus(OnboardingStatus.PENDING);
-    onboarding.setOtpDetails("{}");
-
-    Onboarding saved = onboardingRepository.save(onboarding);
-    otpEmailService.generateAndSend(saved);
-    return saved;
+  /**
+   * Caps how many OTP codes a single company_email can generate within a rolling window,
+   * counted straight off onboarding_otp.created_at since every generateAndSend call inserts
+   * a fresh row there (old ones are marked INVALIDATED, never deleted).
+   */
+  private void enforceOtpGenerationRateLimit(String companyEmail) {
+    Instant windowStart = Instant.now().minusSeconds(otpGenerationWindowSeconds);
+    long recentCount =
+        onboardingOtpRepository.countByCompanyEmailAndCreatedAtAfter(companyEmail, windowStart);
+    if (recentCount >= otpGenerationMaxCount) {
+      throw new OtpGenerationRateLimitedException(
+          String.format(
+              "Too many OTP codes requested for company_email %s, try again later",
+              companyEmail));
+    }
   }
 
   /**
    * Completes the onboarding funnel: requires the company_email's onboarding record to already be
-   * OTP-verified (status {@link com.tenantos.registrar.enums.OnboardingStatus#OTP_VALIDATED}),
-   * that vrfkToken identifies a validated onboarding_otp row for the same company_email, creates
-   * the tenant account with a hashed password, and marks the onboarding record
-   * {@link com.tenantos.registrar.enums.OnboardingStatus#COMPLETED}.
+   * OTP-verified (status {@link com.tenantos.registrar.enums.OnboardingStatus#OTP_VALIDATED}), that
+   * vrfkToken identifies a validated onboarding_otp row for the same company_email, creates the
+   * tenant account with a hashed password, and marks the onboarding record {@link
+   * com.tenantos.registrar.enums.OnboardingStatus#COMPLETED}.
    */
   @Transactional
   public TenantsRegistration register(OnboardingRegistrationCommand command) {
@@ -124,6 +150,8 @@ public class OnboardingService {
 
     onboarding.setStatus(OnboardingStatus.COMPLETED);
     onboardingRepository.save(onboarding);
+
+    onboardingEmailService.sendAccountRegistrationInProgress(saved);
 
     return saved;
   }

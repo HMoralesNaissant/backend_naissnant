@@ -1,6 +1,7 @@
 package com.tenantos.registrar.repository;
 
 import com.tenantos.registrar.entity.OnboardingOtp;
+import jakarta.transaction.Transactional;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -20,6 +21,8 @@ public interface OnboardingOtpRepository extends JpaRepository<OnboardingOtp, St
   Optional<OnboardingOtp> findByCompanyEmailAndCreated(String companyEmail);
 
   Optional<OnboardingOtp> findByOtpIdAndCompanyEmail(String otpId, String companyEmail);
+
+  long countByCompanyEmailAndCreatedAtAfter(String companyEmail, Instant cutoff);
 
   /**
    * Atomically records a validation attempt, only if the OTP is still pending, unexpired, and under
@@ -47,5 +50,6 @@ public interface OnboardingOtpRepository extends JpaRepository<OnboardingOtp, St
   @Query(
       "update OnboardingOtp o set o.status = com.tenantos.registrar.enums.OnboardingOtpStatus.INVALIDATED, o.validatedAt = :now "
           + "where o.companyEmail = :email and o.status = CREATED")
+  @Transactional(Transactional.TxType.REQUIRES_NEW)
   void markInvalidated(@Param("email") String email, @Param("now") Instant now);
 }

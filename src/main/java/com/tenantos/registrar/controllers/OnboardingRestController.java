@@ -20,6 +20,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import jakarta.validation.Valid;
@@ -146,6 +147,32 @@ public class OnboardingRestController {
   }
 
   @Operation(
+      summary = "Validate the OTP verify link",
+      description =
+          "Validates the token from the emailed verify link (GET /onboarding/verify?email="
+              + "...&vftk=...) against the onboarding record identified by email, same status "
+              + "checks as POST /onboarding/{type}/validate. On success, the onboarding record "
+              + "becomes ready for account registration.")
+  @ApiResponses(
+      value = {
+        @ApiResponse(responseCode = "204", description = "Verified", content = @Content),
+        @ApiResponse(
+            responseCode = "400",
+            description = "Bad Request - invalid/expired/already-validated token",
+            content = @Content),
+        @ApiResponse(
+            responseCode = "403",
+            description = "Forbidden - missing, invalid, or expired onboarding token",
+            content = @Content)
+      })
+  @GetMapping("/verify")
+  public ResponseEntity<Void> verifyOtpToken(
+      @RequestParam String email, @RequestParam String vftk) {
+    onboardingTokenService.validateOtpToken(email, vftk);
+    return ResponseEntity.noContent().build();
+  }
+
+  @Operation(
       summary = "Resend the OTP code",
       description =
           "Invalidates any previously issued OTP code and emails a new one for the "
@@ -171,8 +198,7 @@ public class OnboardingRestController {
   @PostMapping("/{type}/resend")
   public ResponseEntity<?> resendCode(
       @PathVariable String type, @Valid @RequestBody ResendCodeCommand request) {
-    onboardingTokenService.resendCode(
-        new OnboardingOtpService.ResendCodeCommand(request.companyEmail(), type));
+    onboardingTokenService.resendCode(new ResendCodeCommand(request.companyEmail(), type));
     return ResponseEntity.ok().build();
   }
 

@@ -2,9 +2,11 @@ package com.tenantos.registrar.services;
 
 import com.tenantos.registrar.entity.Onboarding;
 import com.tenantos.registrar.entity.OnboardingOtp;
+import com.tenantos.registrar.entity.TenantsRegistration;
 import com.tenantos.registrar.repository.OnboardingOtpRepository;
 import com.tenantos.registrar.utils.HashUtils;
 import jakarta.mail.internet.MimeMessage;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
@@ -19,14 +21,23 @@ import java.security.SecureRandom;
 import java.time.Instant;
 
 /**
- * Generates the OTP code emailed during onboarding verification, persists it (hashed),
- * and sends it. The raw code is never returned to this method's caller - it only ever
- * exists locally, long enough to hash it and render/send the email.
+ * Every email sent during the onboarding funnel: the OTP verification code and the
+ * post-registration notice. Kept in one class since both are thin
+ * render-a-Thymeleaf-template-and-send-via-JavaMailSender operations over the same
+ * mail configuration - splitting them added no isolation, just duplication.
+ *
+ * <p>The two sends have different failure semantics. generateAndSend's send failure
+ * propagates and rolls back its caller's transaction: without the email nobody can ever
+ * verify the onboarding row, so it may as well not exist. sendAccountRegistrationInProgress
+ * swallows failures instead - by the time it runs the account already exists and is fully
+ * usable, so it's a courtesy notification, not part of the funnel's correctness.
  */
+@Slf4j
 @Service
-public class OtpEmailService {
+public class OnboardingEmailService {
 
-    private static final String TEMPLATE_NAME = "otp-code-template";
+    private static final String OTP_TEMPLATE_NAME = "otp-code-template";
+    private static final String ACCOUNT_REGISTRATION_INPROGRESS_TEMPLATE_NAME = "account-registration-inprogress";
     private static final int OTP_ID_LENGTH = 200;
     private static final String OTP_ID_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
 
@@ -44,11 +55,13 @@ public class OtpEmailService {
     private final ITemplateEngine templateEngine;
     private final SecureRandom secureRandom = new SecureRandom();
 
-    public OtpEmailService(OnboardingOtpRepository repository, JavaMailSender mailSender, ITemplateEngine templateEngine) {
+    public OnboardingEmailService(OnboardingOtpRepository repository, JavaMailSender mailSender, ITemplateEngine templateEngine) {
         this.repository = repository;
         this.mailSender = mailSender;
         this.templateEngine = templateEngine;
     }
+
+    // --- OTP verification email ---
 
     @Transactional
     public void generateAndSend(Onboarding onboarding) {
@@ -64,12 +77,12 @@ public class OtpEmailService {
                 .build();
         OnboardingOtp otpCode = repository.save(otp);
 
-        send(onboarding.getCompanyEmail(), code, otpCode);
+        sendOtpEmail(onboarding.getCompanyEmail(), code, otpCode);
     }
 
-    private void send(String companyEmail, String rawCode, OnboardingOtp otp) {
+    private void sendOtpEmail(String companyEmail, String rawCode, OnboardingOtp otp) {
         String verifyUrl = buildVerifyUrl(otp);
-        String htmlBody = renderHtml(rawCode, verifyUrl);
+        String htmlBody = renderOtpHtml(rawCode, verifyUrl);
         String plainTextBody = "Your verification code is: " + rawCode + "\n\n"
                 + "Or continue here: " + verifyUrl + "\n\n"
                 + "This code expires in " + (ttlSeconds / 60) + " minutes.";
@@ -87,11 +100,11 @@ public class OtpEmailService {
         }
     }
 
-    private String renderHtml(String rawCode, String verifyUrl) {
+    private String renderOtpHtml(String rawCode, String verifyUrl) {
         Context context = new Context();
         context.setVariable("codeDisplay", String.join(" ", rawCode.split("")));
         context.setVariable("verifyUrl", verifyUrl);
-        return templateEngine.process(TEMPLATE_NAME, context);
+        return templateEngine.process(OTP_TEMPLATE_NAME, context);
     }
 
     private String buildVerifyUrl(OnboardingOtp otp) {
@@ -112,11 +125,42 @@ public class OtpEmailService {
     }
 
     private String randomAlphanumeric() {
-        StringBuilder sb = new StringBuilder(OtpEmailService.OTP_ID_LENGTH);
-        for (int i = 0; i < OtpEmailService.OTP_ID_LENGTH; i++) {
+        StringBuilder sb = new StringBuilder(OTP_ID_LENGTH);
+        for (int i = 0; i < OTP_ID_LENGTH; i++) {
             int idx = secureRandom.nextInt(OTP_ID_ALPHABET.length());
             sb.append(OTP_ID_ALPHABET.charAt(idx));
         }
         return sb.toString();
+    }
+
+    // --- post-registration "account is being provisioned" email ---
+    // Sent right after account creation. Account confirmation (a separate "your account is
+    // ready" email) isn't implemented yet - this is a placeholder notice in the meantime.
+
+    public void sendAccountRegistrationInProgress(TenantsRegistration registration) {
+        try {
+            String htmlBody = renderAccountRegistrationInProgressHtml(registration.getCompanyEmail());
+            String plainTextBody = "Thanks for registering. Your tenantOS account is being provisioned - "
+                    + "we'll email you again once it's ready.";
+
+            MimeMessage mimeMessage = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(mimeMessage, true, "UTF-8");
+            helper.setFrom(fromAddress);
+            helper.setTo(registration.getCompanyEmail());
+            helper.setSubject("Your tenantOS account setup is in progress");
+            helper.setText(plainTextBody, htmlBody);
+            mailSender.send(mimeMessage);
+        } catch (Exception e) {
+            log.warn(
+                    "Failed to send account-registration-in-progress email for company_email {}",
+                    registration.getCompanyEmail(),
+                    e);
+        }
+    }
+
+    private String renderAccountRegistrationInProgressHtml(String companyEmail) {
+        Context context = new Context();
+        context.setVariable("companyEmail", companyEmail);
+        return templateEngine.process(ACCOUNT_REGISTRATION_INPROGRESS_TEMPLATE_NAME, context);
     }
 }

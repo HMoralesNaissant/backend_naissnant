@@ -8,4 +8,5 @@ import jakarta.validation.constraints.NotBlank;
 public record ResendCodeCommand(
     @NotBlank(message = "companyEmail is required")
         @Email(message = "companyEmail must be a valid email")
-        String companyEmail) {}
+        String companyEmail,
+    String type) {}
