@@ -1,4 +1,4 @@
-package com.tenantos.registrar.services;
+package com.tenantos.registrar.services.onboarding;
 
 import com.tenantos.registrar.repository.OnboardingOtpRepository;
 import org.springframework.stereotype.Service;

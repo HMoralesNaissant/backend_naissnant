@@ -1,14 +1,16 @@
-package com.tenantos.registrar.services;
+package com.tenantos.registrar.services.onboarding;
 
-import com.tenantos.registrar.domain.request.OnboardingRegistrationCommand;
+import com.tenantos.registrar.domain.request.AccountRegistrationRequest;
 import com.tenantos.registrar.entity.Onboarding;
 import com.tenantos.registrar.entity.OnboardingOtp;
 import com.tenantos.registrar.entity.TenantsRegistration;
 import com.tenantos.registrar.enums.OnboardingOtpStatus;
 import com.tenantos.registrar.enums.OnboardingStatus;
+import com.tenantos.registrar.enums.TenantsRegistrationStatus;
 import com.tenantos.registrar.exceptions.InvalidOtpException;
 import com.tenantos.registrar.exceptions.OtpGenerationRateLimitedException;
 import com.tenantos.registrar.repository.*;
+import com.tenantos.registrar.services.TenantWorkspaceInitialization;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -43,6 +45,7 @@ public class OnboardingService {
   private final OnboardingOtpRepository onboardingOtpRepository;
   private final PasswordEncoder passwordEncoder;
   private final OnboardingEmailService onboardingEmailService;
+  private final TenantWorkspaceInitialization tenantWorkspaceInitialization;
 
   /**
    * Create a new onboarding record and email its OTP verification code. The onboarding table uses
@@ -113,7 +116,7 @@ public class OnboardingService {
    * com.tenantos.registrar.enums.OnboardingStatus#COMPLETED}.
    */
   @Transactional
-  public TenantsRegistration register(OnboardingRegistrationCommand command) {
+  public TenantsRegistration register(AccountRegistrationRequest command) {
     Onboarding onboarding =
         onboardingRepository
             .findById(command.companyEmail())
@@ -147,6 +150,10 @@ public class OnboardingService {
                 .password(passwordEncoder.encode(command.password()))
                 .accountName(command.accountName())
                 .build());
+
+    tenantWorkspaceInitialization.initializeWorkspace(saved);
+    saved.setStatus(TenantsRegistrationStatus.COMPLETED);
+    saved = tenantsRegistrationRepository.save(saved);
 
     onboarding.setStatus(OnboardingStatus.COMPLETED);
     onboardingRepository.save(onboarding);

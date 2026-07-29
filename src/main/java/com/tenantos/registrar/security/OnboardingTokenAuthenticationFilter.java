@@ -1,8 +1,6 @@
 package com.tenantos.registrar.security;
 
-import com.tenantos.registrar.services.OnboardingOnFlightTokenService;
-import com.tenantos.registrar.services.OnboardingOtpService;
-import com.tenantos.registrar.services.OnboardingService;
+import com.tenantos.registrar.services.onboarding.OnboardingOnFlightTokenService;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;

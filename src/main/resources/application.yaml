@@ -3,7 +3,9 @@ spring:
     active: local
 
   application:
-    name: backend
+    name: tenatos-registrar
+
+  #DATABASE CONFIGURATION
   datasource:
     url: ${DB_URL:jdbc:postgresql://localhost:54321/${DB_NAME}?sslmode=disable&ApplicationName=tenantos-registrar-local}
     username: ${POSTGRES_USER}
@@ -96,6 +98,12 @@ ratelimit:
       maxRequests: ${RATE_LIMIT_ONBOARDING_MAX_REQUESTS:60}
       windowSeconds: ${RATE_LIMIT_ONBOARDING_WINDOW_SECONDS:60}
       enabled: ${RATE_LIMIT_ONBOARDING_ENABLED:true}
+
+#AWS SDK CONFIGURATION
+aws:
+  region: ${AWS_REGION:}
+  eks:
+    cluster-name: ${EKS_CLUSTER_NAME:}
 
 server:
   port: ${PORT:8080}

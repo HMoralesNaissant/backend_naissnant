@@ -1,6 +1,6 @@
 package com.tenantos.registrar.services;
 
-import com.tenantos.registrar.domain.request.OnboardingRegistrationCommand;
+import com.tenantos.registrar.domain.request.AccountRegistrationRequest;
 import com.tenantos.registrar.entity.Onboarding;
 import com.tenantos.registrar.entity.OnboardingOtp;
 import com.tenantos.registrar.entity.TenantsRegistration;
@@ -11,6 +11,8 @@ import com.tenantos.registrar.exceptions.OtpGenerationRateLimitedException;
 import com.tenantos.registrar.repository.OnboardingOtpRepository;
 import com.tenantos.registrar.repository.OnboardingRepository;
 import com.tenantos.registrar.repository.TenantsRegistrationRepository;
+import com.tenantos.registrar.services.onboarding.OnboardingEmailService;
+import com.tenantos.registrar.services.onboarding.OnboardingService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -47,6 +49,8 @@ class OnboardingServiceTest {
 
     @Mock
     private OnboardingEmailService onboardingEmailService;
+    @Mock
+    private TenantWorkspaceInitialization tenantWorkspaceInitialization;
 
     @InjectMocks
     private OnboardingService service;
@@ -241,9 +245,9 @@ class OnboardingServiceTest {
         verify(onboardingEmailService).sendAccountRegistrationInProgress(saved);
     }
 
-    private static OnboardingRegistrationCommand command() {
-        return new OnboardingRegistrationCommand(
-                "vrfk-token", "a@example.com", "Full Name", "raw-password", "acme");
+    private static AccountRegistrationRequest command() {
+    return new AccountRegistrationRequest(
+        "vrfk-token", "a@example.com", "Full Name", "raw-password", "acme");
     }
 
     private static OnboardingOtp validatedOtp() {

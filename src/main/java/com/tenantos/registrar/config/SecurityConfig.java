@@ -1,14 +1,11 @@
 package com.tenantos.registrar.config;
 
 import java.util.Arrays;
-import java.util.List;
 import java.util.Map;
 
 import com.tenantos.registrar.security.OnboardingTokenAuthenticationFilter;
 import com.tenantos.registrar.security.RateLimitFilter;
-import com.tenantos.registrar.services.OnboardingOnFlightTokenService;
-import com.tenantos.registrar.services.OnboardingOtpService;
-import com.tenantos.registrar.services.OnboardingService;
+import com.tenantos.registrar.services.onboarding.OnboardingOnFlightTokenService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;

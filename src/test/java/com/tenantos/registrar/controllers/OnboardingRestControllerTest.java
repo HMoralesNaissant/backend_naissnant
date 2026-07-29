@@ -2,15 +2,14 @@ package com.tenantos.registrar.controllers;
 
 import com.tenantos.registrar.domain.request.AccountRegistrationRequest;
 import com.tenantos.registrar.domain.request.OnboardingRequest;
-import com.tenantos.registrar.domain.request.OnboardingRegistrationCommand;
 import com.tenantos.registrar.domain.request.ResendCodeCommand;
 import com.tenantos.registrar.domain.response.AccountRegistrationResponse;
 import com.tenantos.registrar.entity.Onboarding;
 import com.tenantos.registrar.entity.TenantsRegistration;
 import com.tenantos.registrar.enums.TenantsRegistrationStatus;
-import com.tenantos.registrar.services.OnboardingOnFlightTokenService;
-import com.tenantos.registrar.services.OnboardingService;
-import com.tenantos.registrar.services.OnboardingOtpService;
+import com.tenantos.registrar.services.onboarding.OnboardingOnFlightTokenService;
+import com.tenantos.registrar.services.onboarding.OnboardingService;
+import com.tenantos.registrar.services.onboarding.OnboardingOtpService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.junit.jupiter.api.Test;
@@ -149,8 +148,8 @@ class OnboardingRestControllerTest {
         .isEqualTo(
             new AccountRegistrationResponse("a@example.com", "Full Name", "acme", "COMPLETED"));
 
-    ArgumentCaptor<OnboardingRegistrationCommand> commandCaptor =
-        ArgumentCaptor.forClass(OnboardingRegistrationCommand.class);
+    ArgumentCaptor<AccountRegistrationRequest> commandCaptor =
+        ArgumentCaptor.forClass(AccountRegistrationRequest.class);
     InOrder order = inOrder(onboardingService, onboardingOnFlightTokenService);
     order.verify(onboardingService).register(commandCaptor.capture());
     order.verify(onboardingOnFlightTokenService).validateAndConsume("raw-token");

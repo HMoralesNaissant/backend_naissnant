@@ -1,5 +1,6 @@
-package com.tenantos.registrar.services;
+package com.tenantos.registrar.services.onboarding;
 
+import com.tenantos.registrar.domain.request.OtpSubmissionCommand;
 import com.tenantos.registrar.domain.request.ResendCodeCommand;
 import com.tenantos.registrar.domain.response.ValidateOtpResponse;
 import com.tenantos.registrar.entity.Onboarding;
@@ -19,7 +20,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
-import java.util.Optional;
 
 /**
  * Issues and consumes short-lived, single-use preflight tokens that gate every endpoint under
@@ -41,11 +41,7 @@ public class OnboardingOtpService {
   private final OtpAttemptTracker otpAttemptTracker;
   private final OnboardingEmailService onboardingEmailService;
 
-  /**
-   * Input to validateOtp - the service defines its own command type rather than taking
-   * companyEmail/type/code as three positional strings.
-   */
-  public record OtpValidationCommand(String companyEmail, String type, String code) {}
+
 
   /**
    * Validates the OTP code emailed during onboarding (see OnboardingEmailService). Distinct from
@@ -60,7 +56,7 @@ public class OnboardingOtpService {
    * transaction would roll the increment back along with it, silently defeating the attempts cap.
    */
   @Transactional
-  public ValidateOtpResponse validateOtp(OtpValidationCommand command) {
+  public ValidateOtpResponse submitOtp(OtpSubmissionCommand command) {
 
     Onboarding onboarding =
         onboardingRepository
@@ -106,7 +102,8 @@ public class OnboardingOtpService {
     if (!otp.getCodeHash().equals(hash(command.code()))) {
       throw new InvalidOtpException(
           String.format(
-              "OTP code does not match for this company_email %s", command.companyEmail()));
+              "OTP code does not match for this company_email %s", command.companyEmail()),
+          "Invalid OTP code provided");
     }
 
     int validated = otpRepository.markValidated(command.companyEmail(), now);

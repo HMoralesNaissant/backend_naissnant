@@ -6,7 +6,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 
 @Schema(name = "OtpValidationRequest", description = "Payload to validate the emailed OTP code")
-public record OtpValidationRequest(
+public record OtpValidationCommand(
         @NotBlank(message = "companyEmail is required")
         @Email(message = "companyEmail must be a valid email")
         String companyEmail,

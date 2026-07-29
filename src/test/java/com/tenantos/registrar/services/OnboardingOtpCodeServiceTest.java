@@ -1,5 +1,6 @@
 package com.tenantos.registrar.services;
 
+import com.tenantos.registrar.domain.request.OtpSubmissionCommand;
 import com.tenantos.registrar.domain.request.ResendCodeCommand;
 import com.tenantos.registrar.entity.Onboarding;
 import com.tenantos.registrar.entity.OnboardingOtp;
@@ -12,6 +13,10 @@ import com.tenantos.registrar.repository.OnboardingOtpRepository;
 import com.tenantos.registrar.repository.OnboardingRepository;
 import com.tenantos.registrar.repository.OnboardingTokenRepository;
 import com.tenantos.registrar.repository.TenantsRegistrationRepository;
+import com.tenantos.registrar.services.onboarding.OnboardingEmailService;
+import com.tenantos.registrar.services.onboarding.OnboardingOnFlightTokenService;
+import com.tenantos.registrar.services.onboarding.OnboardingOtpService;
+import com.tenantos.registrar.services.onboarding.OtpAttemptTracker;
 import com.tenantos.registrar.utils.HashUtils;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
@@ -203,9 +208,8 @@ class OnboardingOtpCodeServiceTest {
 
     assertThatThrownBy(
             () ->
-                onboardingOtpService.validateOtp(
-                    new OnboardingOtpService.OtpValidationCommand(
-                        "a@example.com", "code", "123456")))
+                onboardingOtpService.submitOtp(
+                    new OtpSubmissionCommand("a@example.com", "code", "123456")))
         .isInstanceOf(InvalidOtpException.class);
 
     verify(otpAttemptTracker, never()).recordAttempt(anyString(), any(), anyInt());
@@ -218,9 +222,8 @@ class OnboardingOtpCodeServiceTest {
 
     assertThatThrownBy(
             () ->
-                onboardingOtpService.validateOtp(
-                    new OnboardingOtpService.OtpValidationCommand(
-                        "a@example.com", "sms", "123456")))
+                onboardingOtpService.submitOtp(
+                    new OtpSubmissionCommand("a@example.com", "sms", "123456")))
         .isInstanceOf(InvalidOtpException.class)
         .hasMessageContaining("otpType mismatch");
 
@@ -235,11 +238,10 @@ class OnboardingOtpCodeServiceTest {
 
     assertThatThrownBy(
             () ->
-                onboardingOtpService.validateOtp(
-                    new OnboardingOtpService.OtpValidationCommand(
-                        "a@example.com", "code", "123456")))
+                onboardingOtpService.submitOtp(
+                    new OtpSubmissionCommand("a@example.com", "code", "123456")))
         .isInstanceOf(InvalidOtpException.class)
-        .hasMessageContaining("not awaiting OTP validation");
+        .hasMessageContaining("was already validated for email");
 
     verify(otpAttemptTracker, never()).recordAttempt(anyString(), any(), anyInt());
   }
@@ -252,9 +254,8 @@ class OnboardingOtpCodeServiceTest {
 
     assertThatThrownBy(
             () ->
-                onboardingOtpService.validateOtp(
-                    new OnboardingOtpService.OtpValidationCommand(
-                        "a@example.com", "code", "123456")))
+                onboardingOtpService.submitOtp(
+                    new OtpSubmissionCommand("a@example.com", "code", "123456")))
         .isInstanceOf(InvalidOtpException.class)
         .hasMessageContaining("expired or too many attempts");
 
@@ -279,11 +280,10 @@ class OnboardingOtpCodeServiceTest {
 
     assertThatThrownBy(
             () ->
-                onboardingOtpService.validateOtp(
-                    new OnboardingOtpService.OtpValidationCommand(
-                        "a@example.com", "code", "111111")))
+                onboardingOtpService.submitOtp(
+                    new OtpSubmissionCommand("a@example.com", "code", "111111")))
         .isInstanceOf(InvalidOtpException.class)
-        .hasMessageContaining("Invalid OTP code");
+        .hasMessageContaining("OTP code does not match for");
 
     verify(otpAttemptTracker).recordAttempt(eq("a@example.com"), any(), eq(5));
     verify(otpRepository, never()).markValidated(anyString(), any());
@@ -299,9 +299,8 @@ class OnboardingOtpCodeServiceTest {
 
     assertThatThrownBy(
             () ->
-                onboardingOtpService.validateOtp(
-                    new OnboardingOtpService.OtpValidationCommand(
-                        "a@example.com", "code", "123456")))
+                onboardingOtpService.submitOtp(
+                    new OtpSubmissionCommand("a@example.com", "code", "123456")))
         .isInstanceOf(InvalidOtpException.class);
   }
 
@@ -320,9 +319,8 @@ class OnboardingOtpCodeServiceTest {
 
     assertThatThrownBy(
             () ->
-                onboardingOtpService.validateOtp(
-                    new OnboardingOtpService.OtpValidationCommand(
-                        "a@example.com", "code", "123456")))
+                onboardingOtpService.submitOtp(
+                    new OtpSubmissionCommand("a@example.com", "code", "123456")))
         .isInstanceOf(InvalidOtpException.class)
         .hasMessageContaining("already validated");
 
@@ -342,8 +340,7 @@ class OnboardingOtpCodeServiceTest {
     when(otpRepository.findByCompanyEmailAndCreated("a@example.com")).thenReturn(Optional.of(otp));
     when(otpRepository.markValidated(eq("a@example.com"), any())).thenReturn(1);
 
-    onboardingOtpService.validateOtp(
-        new OnboardingOtpService.OtpValidationCommand("a@example.com", "code", "123456"));
+    onboardingOtpService.submitOtp(new OtpSubmissionCommand("a@example.com", "code", "123456"));
 
     assertThat(onboarding.getStatus()).isEqualTo(OnboardingStatus.OTP_VALIDATED);
     verify(onboardingRepository).save(onboarding);

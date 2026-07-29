@@ -25,6 +25,16 @@ repositories {
 }
 
 
+ext {
+    awsSdkVersion = '2.49.4'
+}
+
+dependencyManagement {
+    imports {
+        mavenBom "software.amazon.awssdk:bom:${awsSdkVersion}"
+    }
+}
+
 dependencies {
     //Springboot dependencies
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
@@ -52,6 +62,18 @@ dependencies {
 
     //PostgresSQL
     runtimeOnly 'org.postgresql:postgresql'
+
+    //AWS SDK v2 - credential resolution (env vars, EC2/ECS instance profile, EKS pod/IRSA web identity)
+    implementation 'software.amazon.awssdk:auth'
+    implementation 'software.amazon.awssdk:regions'
+    implementation 'software.amazon.awssdk:sts'
+
+    //AWS SDK v2 - EKS cluster discovery + IAM-based Kubernetes API authentication
+    implementation 'software.amazon.awssdk:eks'
+    implementation 'software.amazon.awssdk:http-auth-aws'
+
+    //Kubernetes client - talks to the EKS control plane using EksClusterAuthProvider's token
+    implementation 'io.fabric8:kubernetes-client:7.8.0'
 
     //Tests
     testImplementation 'org.springframework.boot:spring-boot-starter-actuator-test'

@@ -5,9 +5,9 @@ import com.tenantos.registrar.domain.response.AccountRegistrationResponse;
 import com.tenantos.registrar.domain.response.ValidateOtpResponse;
 import com.tenantos.registrar.entity.Onboarding;
 import com.tenantos.registrar.entity.TenantsRegistration;
-import com.tenantos.registrar.services.OnboardingOnFlightTokenService;
-import com.tenantos.registrar.services.OnboardingService;
-import com.tenantos.registrar.services.OnboardingOtpService;
+import com.tenantos.registrar.services.onboarding.OnboardingOnFlightTokenService;
+import com.tenantos.registrar.services.onboarding.OnboardingService;
+import com.tenantos.registrar.services.onboarding.OnboardingOtpService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
@@ -139,11 +139,10 @@ public class OnboardingRestController {
       })
   @PostMapping("/{type}/validate")
   public ResponseEntity<ValidateOtpResponse> validateOtp(
-      @PathVariable String type, @Valid @RequestBody OtpValidationRequest request) {
+      @PathVariable String type, @Valid @RequestBody OtpValidationCommand request) {
     return ResponseEntity.ok(
-        onboardingTokenService.validateOtp(
-            new OnboardingOtpService.OtpValidationCommand(
-                request.companyEmail(), type, request.code())));
+        onboardingTokenService.submitOtp(
+            new OtpSubmissionCommand(request.companyEmail(), type, request.code())));
   }
 
   @Operation(
@@ -229,15 +228,9 @@ public class OnboardingRestController {
       })
   @PostMapping("/account-registration")
   public ResponseEntity<?> registerAccount(
-      @Valid @RequestBody AccountRegistrationRequest request, HttpServletRequest servletRequest) {
-    TenantsRegistration saved =
-        onboardingService.register(
-            new OnboardingRegistrationCommand(
-                request.vrfkToken(),
-                request.companyEmail(),
-                request.fullName(),
-                request.password(),
-                request.accountName()));
+      @Valid @RequestBody AccountRegistrationRequest accountRegistrationRequest,
+      HttpServletRequest servletRequest) {
+    TenantsRegistration saved = onboardingService.register(accountRegistrationRequest);
 
     // Funnel's single-use burn point - only once registration actually succeeds.
     // Burning it earlier (e.g. before calling the service) would mean a failed

@@ -4,6 +4,7 @@ import com.tenantos.registrar.entity.Onboarding;
 import com.tenantos.registrar.entity.OnboardingOtp;
 import com.tenantos.registrar.entity.TenantsRegistration;
 import com.tenantos.registrar.repository.OnboardingOtpRepository;
+import com.tenantos.registrar.services.onboarding.OnboardingEmailService;
 import com.tenantos.registrar.utils.HashUtils;
 import jakarta.mail.Session;
 import jakarta.mail.internet.MimeMessage;
