@@ -10,10 +10,12 @@ import com.tenantos.registrar.enums.TenantsRegistrationStatus;
 import com.tenantos.registrar.exceptions.InvalidOtpException;
 import com.tenantos.registrar.exceptions.OtpGenerationRateLimitedException;
 import com.tenantos.registrar.repository.*;
-import com.tenantos.registrar.services.TenantWorkspaceInitialization;
+import com.tenantos.registrar.services.workspace.TenantWorkspaceProvisioningService;
+import com.tenantos.registrar.services.workspace.TenantWorkspaceRequestedEvent;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -45,7 +47,8 @@ public class OnboardingService {
   private final OnboardingOtpRepository onboardingOtpRepository;
   private final PasswordEncoder passwordEncoder;
   private final OnboardingEmailService onboardingEmailService;
-  private final TenantWorkspaceInitialization tenantWorkspaceInitialization;
+  private final TenantWorkspaceProvisioningService tenantWorkspaceProvisioningService;
+  private final ApplicationEventPublisher eventPublisher;
 
   /**
    * Create a new onboarding record and email its OTP verification code. The onboarding table uses
@@ -114,6 +117,9 @@ public class OnboardingService {
    * vrfkToken identifies a validated onboarding_otp row for the same company_email, creates the
    * tenant account with a hashed password, and marks the onboarding record {@link
    * com.tenantos.registrar.enums.OnboardingStatus#COMPLETED}.
+   *
+   * <p>The tenant's workspace is only <em>enqueued</em> here, not created - see
+   * {@link com.tenantos.registrar.services.workspace.TenantWorkspaceProvisioningService}.
    */
   @Transactional
   public TenantsRegistration register(AccountRegistrationRequest command) {
@@ -151,14 +157,23 @@ public class OnboardingService {
                 .accountName(command.accountName())
                 .build());
 
-    tenantWorkspaceInitialization.initializeWorkspace(saved);
+
     saved.setStatus(TenantsRegistrationStatus.COMPLETED);
     saved = tenantsRegistrationRepository.save(saved);
 
     onboarding.setStatus(OnboardingStatus.COMPLETED);
     onboardingRepository.save(onboarding);
 
+    // The workspace (an EKS namespace) is provisioned out-of-band, not here: it's seconds of AWS
+    // and Kubernetes I/O, which has no business inside this transaction holding a pooled
+    // connection open, and an AWS hiccup must not roll back an account the user is about to be
+    // told exists. enqueue() only writes the job row, in this same transaction, so the job can't
+    // survive a rollback nor be lost after a commit.
     onboardingEmailService.sendAccountRegistrationInProgress(saved);
+
+    tenantWorkspaceProvisioningService.enqueue(saved);
+    // AFTER_COMMIT listener starts the job immediately; the poller is only the retry safety net.
+    eventPublisher.publishEvent(new TenantWorkspaceRequestedEvent(saved.getCompanyEmail()));
 
     return saved;
   }

@@ -34,14 +34,11 @@ public class OnboardingOtpService {
   @Value("${fe.onboarding.otp-max-attempts}")
   private int otpMaxAttempts;
 
-  private final OnboardingTokenRepository onboardingTokenRepository;
   private final OnboardingOtpRepository otpRepository;
   private final OnboardingRepository onboardingRepository;
   private final TenantsRegistrationRepository tenantsRegistrationRepository;
   private final OtpAttemptTracker otpAttemptTracker;
   private final OnboardingEmailService onboardingEmailService;
-
-
 
   /**
    * Validates the OTP code emailed during onboarding (see OnboardingEmailService). Distinct from
@@ -75,8 +72,8 @@ public class OnboardingOtpService {
     if (!OnboardingStatus.PENDING.equals(onboarding.getStatus())) {
       throw new InvalidOtpException(
           String.format(
-              "Otp Code %s was already validated for email %s",
-              command.code(), onboarding.getCompanyEmail()));
+              "Onboarding is not awaiting OTP validation for company_email %s",
+              command.companyEmail()));
     }
 
     Instant now = Instant.now();
@@ -88,7 +85,7 @@ public class OnboardingOtpService {
               command.companyEmail()));
     }
 
-    // There should be only one opt token in the DB with status CREATED
+    // There should be only one otp token in the DB with status CREATED
     OnboardingOtp otp =
         otpRepository
             .findByCompanyEmailAndCreated(command.companyEmail())
@@ -104,6 +101,11 @@ public class OnboardingOtpService {
           String.format(
               "OTP code does not match for this company_email %s", command.companyEmail()),
           "Invalid OTP code provided");
+    }
+
+    if (otp.getExpiresAt().isBefore(Instant.now())) {
+      throw new InvalidOtpException(
+          String.format("OTP code is expired for company_email %s", command.companyEmail()));
     }
 
     int validated = otpRepository.markValidated(command.companyEmail(), now);
@@ -144,17 +146,20 @@ public class OnboardingOtpService {
 
     OnboardingOtp otp =
         otpRepository
-            .findByOtpIdAndCompanyEmail(verificationToken, companyEmail)
+            .findByCompanyEmailAndCreated(companyEmail)
             .orElseThrow(
                 () ->
                     new InvalidOtpException(
                         String.format(
-                            "Verification token is invalid for company_email %s", companyEmail)));
+                            "No valid OTP code found for company_email %s", companyEmail)));
 
-    if (!OnboardingOtpStatus.CREATED.equals(otp.getStatus())) {
+
+    if (otp.getOtpId() == null || !otp.getOtpId().equals(verificationToken)) {
       throw new InvalidOtpException(
-          String.format("OTP code was already validated for company_email %s", companyEmail));
+          String.format(
+              "Verification token does not match for this company_email %s", companyEmail));
     }
+
     if (otp.getExpiresAt().isBefore(Instant.now())) {
       throw new InvalidOtpException(
           String.format("OTP code is expired for company_email %s", companyEmail));

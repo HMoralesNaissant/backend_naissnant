@@ -3,11 +3,14 @@ package com.tenantos.registrar.controllers;
 import com.tenantos.registrar.domain.request.*;
 import com.tenantos.registrar.domain.response.AccountRegistrationResponse;
 import com.tenantos.registrar.domain.response.ValidateOtpResponse;
+import com.tenantos.registrar.domain.response.WorkspaceStatusResponse;
 import com.tenantos.registrar.entity.Onboarding;
+import com.tenantos.registrar.entity.TenantWorkspaceProvisioning;
 import com.tenantos.registrar.entity.TenantsRegistration;
 import com.tenantos.registrar.services.onboarding.OnboardingOnFlightTokenService;
 import com.tenantos.registrar.services.onboarding.OnboardingService;
 import com.tenantos.registrar.services.onboarding.OnboardingOtpService;
+import com.tenantos.registrar.services.workspace.TenantWorkspaceProvisioningService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
@@ -41,6 +44,7 @@ public class OnboardingRestController {
   private final OnboardingService onboardingService;
   private final OnboardingOtpService onboardingTokenService;
   private final OnboardingOnFlightTokenService onboardingOnFlightTokenService;
+  private final TenantWorkspaceProvisioningService tenantWorkspaceProvisioningService;
 
   @Operation(
       summary = "Issue a preflight onboarding token",
@@ -242,13 +246,55 @@ public class OnboardingRestController {
     String onboardingToken = onboardingOnFlightTokenService.extractToken(servletRequest);
     onboardingOnFlightTokenService.validateAndConsume(onboardingToken);
 
+    // The workspace is provisioned in the background, so hand back the job's id - it's what the
+    // client polls /onboarding/workspace-status with, and the only credential that endpoint takes.
+    String provisioningId =
+        tenantWorkspaceProvisioningService
+            .findByCompanyEmail(saved.getCompanyEmail())
+            .map(TenantWorkspaceProvisioning::getProvisioningId)
+            .orElse(null);
+
     return ResponseEntity.status(HttpStatus.CREATED)
         .body(
             new AccountRegistrationResponse(
                 saved.getCompanyEmail(),
                 saved.getFullName(),
                 saved.getAccountName(),
-                saved.getStatus().name()));
+                saved.getStatus().name(),
+                saved.getWorkspaceStatus().name(),
+                provisioningId));
+  }
+
+  @Operation(
+      summary = "Poll tenant workspace provisioning status",
+      description =
+          "Follows the background job that creates the tenant's workspace, using the "
+              + "provisioningId returned by /onboarding/account-registration. Unauthenticated by "
+              + "design: the onboarding cookie is consumed by registration, so the client holds no "
+              + "credential afterwards - the 64-char random provisioningId is the capability. "
+              + "Poll until status is WORKSPACE_READY or WORKSPACE_FAILED.")
+  @ApiResponses({
+    @ApiResponse(
+        responseCode = "200",
+        description = "Current provisioning state",
+        content =
+            @Content(schema = @Schema(implementation = WorkspaceStatusResponse.class))),
+    @ApiResponse(responseCode = "404", description = "Unknown provisioningId", content = @Content)
+  })
+  @GetMapping("/workspace-status/{provisioningId}")
+  public ResponseEntity<?> workspaceStatus(@PathVariable String provisioningId) {
+    return tenantWorkspaceProvisioningService
+        .findByProvisioningId(provisioningId)
+        .<ResponseEntity<?>>map(
+            job ->
+                ResponseEntity.ok(
+                    // last_error/attempts stay server-side - they can carry AWS/EKS internals.
+                    new WorkspaceStatusResponse(
+                        job.getStatus().name(),
+                        job.getNamespace(),
+                        job.getCompletedAt(),
+                        job.getUpdatedAt())))
+        .orElseGet(() -> ResponseEntity.notFound().build());
   }
 
   private Map<String, Object> getUserClientDetails(HttpServletRequest request) {

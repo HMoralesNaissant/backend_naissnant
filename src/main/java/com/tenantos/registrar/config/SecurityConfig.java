@@ -69,6 +69,13 @@ public class SecurityConfig {
                     // fresh client can make before it has a token to authenticate with.
                     .requestMatchers(HttpMethod.GET, "/onboarding/token")
                     .permitAll()
+                    // Workspace status is polled *after* registration, which deliberately consumes
+                    // the preflight token - so by then the client has no /onboarding credential
+                    // left. The 64-char random provisioningId in the path is the capability
+                    // instead: unguessable, scoped to one tenant, and the response leaks nothing
+                    // about whether a given email is registered.
+                    .requestMatchers(HttpMethod.GET, "/onboarding/workspace-status/*")
+                    .permitAll()
                     // Everything else under /onboarding is gated by the preflight token cookie
                     // (OnboardingTokenAuthenticationFilter), not by JWT/ROLE_USER. This covers any
                     // future endpoint added under this path too, not just the current POST

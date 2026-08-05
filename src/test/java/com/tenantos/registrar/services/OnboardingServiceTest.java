@@ -13,6 +13,7 @@ import com.tenantos.registrar.repository.OnboardingRepository;
 import com.tenantos.registrar.repository.TenantsRegistrationRepository;
 import com.tenantos.registrar.services.onboarding.OnboardingEmailService;
 import com.tenantos.registrar.services.onboarding.OnboardingService;
+import com.tenantos.registrar.services.workspace.TenantWorkspaceProvisioningService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -20,6 +21,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -50,7 +52,9 @@ class OnboardingServiceTest {
     @Mock
     private OnboardingEmailService onboardingEmailService;
     @Mock
-    private TenantWorkspaceInitialization tenantWorkspaceInitialization;
+    private TenantWorkspaceProvisioningService tenantWorkspaceProvisioningService;
+    @Mock
+    private ApplicationEventPublisher eventPublisher;
 
     @InjectMocks
     private OnboardingService service;

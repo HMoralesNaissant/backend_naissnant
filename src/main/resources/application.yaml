@@ -71,7 +71,25 @@ fe:
     otp-generation-max-count: ${ONBOARDING_OTP_GENERATION_MAX_COUNT:3}
     otp-generation-window-seconds: ${ONBOARDING_OTP_GENERATION_WINDOW_SECONDS:3600}
     otp-from-address: ${ONBOARDING_OTP_FROM_ADDRESS:no-reply@tenantos.local}
-    verify-url-template: ${ONBOARDING_VERIFY_URL_TEMPLATE:http://localhost:3000/onboarding/verify?email={email}&vftk={vftk}}
+    verify-url-template: ${ONBOARDING_VERIFY_URL_TEMPLATE:http://localhost:3000/onboarding/verify?email={email}&vrfk={vrfk}}
+    login-url: ${ONBOARDING_LOGIN_URL:http://localhost:3000/login}
+
+#BACKGROUND TENANT WORKSPACE PROVISIONING
+workspace:
+  provisioning:
+    # Off by default: aws.eks.cluster-name is empty locally, and EksClusterAuthProvider throws when
+    # it is, so an enabled poller would just burn retries until every job dead-letters. Jobs still
+    # enqueue while disabled and drain once this is switched on.
+    enabled: ${WORKSPACE_PROVISIONING_ENABLED:false}
+    poll-interval-ms: ${WORKSPACE_PROVISIONING_POLL_INTERVAL_MS:5000}
+    initial-delay-ms: ${WORKSPACE_PROVISIONING_INITIAL_DELAY_MS:15000}
+    batch-size: ${WORKSPACE_PROVISIONING_BATCH_SIZE:10}
+    max-attempts: ${WORKSPACE_PROVISIONING_MAX_ATTEMPTS:5}
+    backoff-seconds: ${WORKSPACE_PROVISIONING_BACKOFF_SECONDS:30}
+    max-backoff-seconds: ${WORKSPACE_PROVISIONING_MAX_BACKOFF_SECONDS:900}
+    # How long a claimed job may stay IN_PROGRESS before another worker assumes the claimant died
+    # and re-claims it. Must comfortably exceed a worst-case provisioning call.
+    lease-seconds: ${WORKSPACE_PROVISIONING_LEASE_SECONDS:300}
 
 logging:
   level:
@@ -106,5 +124,5 @@ aws:
     cluster-name: ${EKS_CLUSTER_NAME:}
 
 server:
-  port: ${PORT:8080}
+  port: ${PORT:8085}
 

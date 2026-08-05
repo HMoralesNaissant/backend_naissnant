@@ -44,4 +44,13 @@ public class TenantsRegistration extends BaseAuditFields {
     @Column(name = "status", length = 20, nullable = false)
     @Default
     private TenantsRegistrationStatus status = TenantsRegistrationStatus.ONBOARDING;
+
+    // Denormalized copy of the tenant_workspace_provisioning row's status, kept in sync by
+    // TenantWorkspaceProvisioningService. The job table remains the source of truth (it also
+    // holds attempts/last_error); this exists so reading a tenant's workspace state is a
+    // single-row lookup.
+    @Enumerated(EnumType.STRING)
+    @Column(name = "workspace_status", length = 30, nullable = false)
+    @Default
+    private TenantsRegistrationStatus workspaceStatus = TenantsRegistrationStatus.WORKSPACE_PENDING;
 }

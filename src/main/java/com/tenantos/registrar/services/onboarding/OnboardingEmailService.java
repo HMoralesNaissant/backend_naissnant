@@ -38,6 +38,7 @@ public class OnboardingEmailService {
 
     private static final String OTP_TEMPLATE_NAME = "otp-code-template";
     private static final String ACCOUNT_REGISTRATION_INPROGRESS_TEMPLATE_NAME = "account-registration-inprogress";
+    private static final String ACCOUNT_REGISTRATION_CONFIRMATION_TEMPLATE_NAME = "account-registration-confirmation";
     private static final int OTP_ID_LENGTH = 200;
     private static final String OTP_ID_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
 
@@ -49,6 +50,9 @@ public class OnboardingEmailService {
 
     @Value("${fe.onboarding.verify-url-template}")
     private String verifyUrlTemplate;
+
+    @Value("${fe.onboarding.login-url}")
+    private String loginUrl;
 
     private final OnboardingOtpRepository repository;
     private final JavaMailSender mailSender;
@@ -110,7 +114,7 @@ public class OnboardingEmailService {
     private String buildVerifyUrl(OnboardingOtp otp) {
         String encodedEmail = URLEncoder.encode(otp.getCompanyEmail(), StandardCharsets.UTF_8);
         return verifyUrlTemplate
-                .replace("{vftk}", otp.getOtpId())
+                .replace("{vrfk}", otp.getOtpId())
                 .replace("{email}", encodedEmail);
     }
 
@@ -134,8 +138,9 @@ public class OnboardingEmailService {
     }
 
     // --- post-registration "account is being provisioned" email ---
-    // Sent right after account creation. Account confirmation (a separate "your account is
-    // ready" email) isn't implemented yet - this is a placeholder notice in the meantime.
+    // Sent right after account creation, while the tenant's workspace is still being provisioned
+    // in the background. sendAccountRegistrationConfirmation below is its counterpart, sent once
+    // the workspace actually exists.
 
     public void sendAccountRegistrationInProgress(TenantsRegistration registration) {
         try {
@@ -162,5 +167,38 @@ public class OnboardingEmailService {
         Context context = new Context();
         context.setVariable("companyEmail", companyEmail);
         return templateEngine.process(ACCOUNT_REGISTRATION_INPROGRESS_TEMPLATE_NAME, context);
+    }
+
+    // --- "your workspace is ready" email ---
+    // Sent by TenantWorkspaceProvisioningService once the tenant's Kubernetes namespace has
+    // actually been created, closing the loop opened by sendAccountRegistrationInProgress.
+    // Swallows failures for the same reason: by this point the workspace exists and the account
+    // is usable, so a bounced notification is not worth failing (and retrying) the job over.
+
+    public void sendAccountRegistrationConfirmation(TenantsRegistration registration) {
+        try {
+            String htmlBody = renderAccountRegistrationConfirmationHtml(registration.getCompanyEmail());
+            String plainTextBody = "Your tenantOS workspace is ready. Sign in at " + loginUrl + ".";
+
+            MimeMessage mimeMessage = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(mimeMessage, true, "UTF-8");
+            helper.setFrom(fromAddress);
+            helper.setTo(registration.getCompanyEmail());
+            helper.setSubject("Your tenantOS workspace is ready");
+            helper.setText(plainTextBody, htmlBody);
+            mailSender.send(mimeMessage);
+        } catch (Exception e) {
+            log.warn(
+                    "Failed to send account-registration-confirmation email for company_email {}",
+                    registration.getCompanyEmail(),
+                    e);
+        }
+    }
+
+    private String renderAccountRegistrationConfirmationHtml(String companyEmail) {
+        Context context = new Context();
+        context.setVariable("companyEmail", companyEmail);
+        context.setVariable("loginUrl", loginUrl);
+        return templateEngine.process(ACCOUNT_REGISTRATION_CONFIRMATION_TEMPLATE_NAME, context);
     }
 }

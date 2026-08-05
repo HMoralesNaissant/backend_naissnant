@@ -10,6 +10,8 @@ import com.tenantos.registrar.enums.TenantsRegistrationStatus;
 import com.tenantos.registrar.services.onboarding.OnboardingOnFlightTokenService;
 import com.tenantos.registrar.services.onboarding.OnboardingService;
 import com.tenantos.registrar.services.onboarding.OnboardingOtpService;
+import com.tenantos.registrar.entity.TenantWorkspaceProvisioning;
+import com.tenantos.registrar.services.workspace.TenantWorkspaceProvisioningService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.junit.jupiter.api.Test;
@@ -22,6 +24,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -39,6 +43,7 @@ class OnboardingRestControllerTest {
   @Mock private OnboardingService onboardingService;
   @Mock private OnboardingOnFlightTokenService onboardingOnFlightTokenService;
   @Mock private OnboardingOtpService onboardingTokenService;
+  @Mock private TenantWorkspaceProvisioningService tenantWorkspaceProvisioningService;
 
   @InjectMocks private OnboardingRestController controller;
 
@@ -140,13 +145,26 @@ class OnboardingRestControllerTest {
             .build();
     when(onboardingService.register(any())).thenReturn(saved);
     when(onboardingOnFlightTokenService.extractToken(servletRequest)).thenReturn("raw-token");
+    when(tenantWorkspaceProvisioningService.findByCompanyEmail("a@example.com"))
+        .thenReturn(
+            Optional.of(
+                TenantWorkspaceProvisioning.builder()
+                    .provisioningId("prov-id-value")
+                    .companyEmail("a@example.com")
+                    .build()));
 
     ResponseEntity<?> result = controller.registerAccount(request, servletRequest);
 
     assertThat(result.getStatusCode()).isEqualTo(HttpStatus.CREATED);
     assertThat(result.getBody())
         .isEqualTo(
-            new AccountRegistrationResponse("a@example.com", "Full Name", "acme", "COMPLETED"));
+            new AccountRegistrationResponse(
+                "a@example.com",
+                "Full Name",
+                "acme",
+                "COMPLETED",
+                "WORKSPACE_PENDING",
+                "prov-id-value"));
 
     ArgumentCaptor<AccountRegistrationRequest> commandCaptor =
         ArgumentCaptor.forClass(AccountRegistrationRequest.class);
