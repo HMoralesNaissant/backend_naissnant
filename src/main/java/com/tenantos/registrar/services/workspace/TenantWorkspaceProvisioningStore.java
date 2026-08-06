@@ -1,6 +1,7 @@
 package com.tenantos.registrar.services.workspace;
 
 import com.tenantos.registrar.entity.TenantWorkspaceProvisioning;
+import com.tenantos.registrar.enums.ProvisioningStep;
 import com.tenantos.registrar.enums.TenantsRegistrationStatus;
 import com.tenantos.registrar.repository.TenantWorkspaceProvisioningRepository;
 import com.tenantos.registrar.repository.TenantsRegistrationRepository;
@@ -67,9 +68,40 @@ public class TenantWorkspaceProvisioningStore {
     return provisioningRepository.saveAll(claimable);
   }
 
+  /** Re-reads a job, for the pipeline walk to pick up the step a just-committed step advanced to. */
+  @Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true)
+  public TenantWorkspaceProvisioning reload(String provisioningId) {
+    return provisioningRepository
+        .findById(provisioningId)
+        .orElseThrow(
+            () -> new IllegalStateException("Provisioning job disappeared: " + provisioningId));
+  }
+
   /**
-   * Records success. Returns rows affected (0 or 1); the caller uses a 0 to suppress the
-   * confirmation email, so a re-claimed stale lease finishing second can't email the tenant twice.
+   * Advances a step that could not do it inside its own transaction - the ones whose work is an
+   * external side effect (Kubernetes, email) rather than a database write.
+   *
+   * <p>Those steps carry a weaker guarantee than the transactional ones: a crash between the side
+   * effect and this call re-runs the side effect on retry. Both are built to tolerate it -
+   * serverSideApply is idempotent, and a duplicate confirmation email is a cosmetic problem rather
+   * than a correctness one.
+   */
+  @Transactional(propagation = Propagation.REQUIRES_NEW)
+  public void advance(String provisioningId, ProvisioningStep next, String namespace) {
+    TenantWorkspaceProvisioning job =
+        provisioningRepository
+            .findById(provisioningId)
+            .orElseThrow(
+                () -> new IllegalStateException("Provisioning job disappeared: " + provisioningId));
+    job.setCurrentStep(next);
+    if (namespace != null) {
+      job.setNamespace(namespace);
+    }
+  }
+
+  /**
+   * Records success. Returns rows affected (0 or 1); the caller uses a 0 to detect that another
+   * worker got there first, so a re-claimed stale lease finishing second stays quiet.
    */
   @Transactional(propagation = Propagation.REQUIRES_NEW)
   public int markReady(TenantWorkspaceProvisioning job, String namespace) {

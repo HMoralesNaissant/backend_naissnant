@@ -66,6 +66,33 @@ public class GlobalExceptionHandler {
     return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(response);
   }
 
+  @ExceptionHandler(AuthenticationFailedException.class)
+  public ResponseEntity<?> handleAuthenticationFailed(AuthenticationFailedException ex) {
+    Map<String, Object> response = new HashMap<>();
+    response.put("status", HttpStatus.UNAUTHORIZED.value());
+    response.put("error", "Unauthorized");
+    response.put("message", ex.getMessage());
+
+    // Logged at warn, not error: a failed login is expected traffic, not a service fault. The
+    // detail of *why* it failed lives in login_audit, never in the response.
+    log.warn("Authentication failed: {}", ex.getMessage());
+    return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(response);
+  }
+
+  @ExceptionHandler(TenantNotProvisionedException.class)
+  public ResponseEntity<?> handleTenantNotProvisioned(TenantNotProvisionedException ex) {
+    Map<String, Object> response = new HashMap<>();
+    response.put("status", HttpStatus.CONFLICT.value());
+    response.put("error", "Conflict");
+    response.put("message", ex.getMessage());
+    // Distinct from a 401 on purpose: the credentials were right, so the client should retry
+    // rather than ask the user for their password again.
+    response.put("retryable", true);
+
+    log.info("Login before provisioning finished: {}", ex.getMessage());
+    return ResponseEntity.status(HttpStatus.CONFLICT).body(response);
+  }
+
   @ExceptionHandler(InvalidOtpException.class)
   public ResponseEntity<?> handleInvalidOtp(InvalidOtpException ex) {
     Map<String, Object> response = new HashMap<>();

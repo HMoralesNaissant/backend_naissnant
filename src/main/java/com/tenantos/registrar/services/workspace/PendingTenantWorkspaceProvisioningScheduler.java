@@ -19,14 +19,14 @@ import org.springframework.stereotype.Component;
 @Slf4j
 @RequiredArgsConstructor
 @ConditionalOnProperty(name = "workspace.provisioning.enabled", havingValue = "true")
-public class TenantWorkspaceProvisioningScheduler {
+public class PendingTenantWorkspaceProvisioningScheduler {
 
   private final TenantWorkspaceProvisioningService provisioningService;
 
   @Scheduled(
       fixedDelayString = "${workspace.provisioning.poll-interval-ms:5000}",
       initialDelayString = "${workspace.provisioning.initial-delay-ms:15000}")
-  public void pollPendingWorkspaces() {
+  public void pollPendingWorkspacesSetup() {
     try {
       provisioningService.runPendingBatch();
     } catch (Exception e) {

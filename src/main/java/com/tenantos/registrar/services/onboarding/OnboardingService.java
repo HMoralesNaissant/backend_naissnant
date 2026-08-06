@@ -89,15 +89,15 @@ public class OnboardingService {
       onboarding.setOtpDetails("{}");
       result = onboardingRepository.save(onboarding);
     }
-    //Generate and send code if needed
+    // Generate and send code if needed
     onboardingEmailService.generateAndSend(result);
     return result;
   }
 
   /**
-   * Caps how many OTP codes a single company_email can generate within a rolling window,
-   * counted straight off onboarding_otp.created_at since every generateAndSend call inserts
-   * a fresh row there (old ones are marked INVALIDATED, never deleted).
+   * Caps how many OTP codes a single company_email can generate within a rolling window, counted
+   * straight off onboarding_otp.created_at since every generateAndSend call inserts a fresh row
+   * there (old ones are marked INVALIDATED, never deleted).
    */
   private void enforceOtpGenerationRateLimit(String companyEmail) {
     Instant windowStart = Instant.now().minusSeconds(otpGenerationWindowSeconds);
@@ -106,20 +106,22 @@ public class OnboardingService {
     if (recentCount >= otpGenerationMaxCount) {
       throw new OtpGenerationRateLimitedException(
           String.format(
-              "Too many OTP codes requested for company_email %s, try again later",
-              companyEmail));
+              "Too many OTP codes requested for company_email %s, try again later", companyEmail));
     }
   }
 
   /**
    * Completes the onboarding funnel: requires the company_email's onboarding record to already be
    * OTP-verified (status {@link com.tenantos.registrar.enums.OnboardingStatus#OTP_VALIDATED}), that
-   * vrfkToken identifies a validated onboarding_otp row for the same company_email, creates the
-   * tenant account with a hashed password, and marks the onboarding record {@link
+   * vrfkToken identifies a validated onboarding_otp row for the same company_email, hashes the
+   * password, and marks the onboarding record {@link
    * com.tenantos.registrar.enums.OnboardingStatus#COMPLETED}.
    *
-   * <p>The tenant's workspace is only <em>enqueued</em> here, not created - see
-   * {@link com.tenantos.registrar.services.workspace.TenantWorkspaceProvisioningService}.
+   * <p>Validate and enqueue only: the user and the tenant are both created by the provisioning
+   * pipeline - see {@link
+   * com.tenantos.registrar.services.workspace.TenantWorkspaceProvisioningService}. The password
+   * hash is the one exception, computed here and staged on the registration row, because bcrypt
+   * needs a plaintext that exists only for the life of this request.
    */
   @Transactional
   public TenantsRegistration register(AccountRegistrationRequest command) {
@@ -148,29 +150,31 @@ public class OnboardingService {
           "An account is already registered for this company_email");
     }
 
+    // Hashing happens here, but the user is created by the CREATE_USER provisioning step. Bcrypt
+    // needs the plaintext, which exists only for the life of this request, so the hash is staged on
+    // the registration row for the step to consume and clear. This is the one part of user creation
+    // that cannot be deferred.
     TenantsRegistration saved =
         tenantsRegistrationRepository.save(
             TenantsRegistration.builder()
+                .passwordHash(passwordEncoder.encode(command.password()))
                 .companyEmail(command.companyEmail())
                 .fullName(command.fullName())
-                .password(passwordEncoder.encode(command.password()))
                 .accountName(command.accountName())
+                .status(TenantsRegistrationStatus.COMPLETED)
                 .build());
-
-
-    saved.setStatus(TenantsRegistrationStatus.COMPLETED);
-    saved = tenantsRegistrationRepository.save(saved);
 
     onboarding.setStatus(OnboardingStatus.COMPLETED);
     onboardingRepository.save(onboarding);
 
-    // The workspace (an EKS namespace) is provisioned out-of-band, not here: it's seconds of AWS
-    // and Kubernetes I/O, which has no business inside this transaction holding a pooled
-    // connection open, and an AWS hiccup must not roll back an account the user is about to be
-    // told exists. enqueue() only writes the job row, in this same transaction, so the job can't
-    // survive a rollback nor be lost after a commit.
     onboardingEmailService.sendAccountRegistrationInProgress(saved);
 
+    // Everything the account is made of - user, tenant, RBAC, subscription, EKS namespace - is
+    // provisioned out-of-band, not here: it ends in seconds of AWS and Kubernetes I/O, which has no
+    // business inside this transaction holding a pooled connection open, and an AWS hiccup must not
+    // roll back a registration the user is about to be told succeeded. enqueue() only writes the
+    // job row, in this same transaction, so the job can neither survive a rollback nor be lost
+    // after a commit.
     tenantWorkspaceProvisioningService.enqueue(saved);
     // AFTER_COMMIT listener starts the job immediately; the poller is only the retry safety net.
     eventPublisher.publishEvent(new TenantWorkspaceRequestedEvent(saved.getCompanyEmail()));

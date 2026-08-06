@@ -42,7 +42,7 @@ spring:
     locations:
       - classpath:db/migration
     baselineOnMigrate: true
-    cleanDisabled:  false
+    cleanDisabled: false
 
   #MAIL
   mail:
@@ -80,7 +80,7 @@ workspace:
     # Off by default: aws.eks.cluster-name is empty locally, and EksClusterAuthProvider throws when
     # it is, so an enabled poller would just burn retries until every job dead-letters. Jobs still
     # enqueue while disabled and drain once this is switched on.
-    enabled: ${WORKSPACE_PROVISIONING_ENABLED:false}
+    enabled: ${WORKSPACE_PROVISIONING_ENABLED:true}
     poll-interval-ms: ${WORKSPACE_PROVISIONING_POLL_INTERVAL_MS:5000}
     initial-delay-ms: ${WORKSPACE_PROVISIONING_INITIAL_DELAY_MS:15000}
     batch-size: ${WORKSPACE_PROVISIONING_BATCH_SIZE:10}
@@ -89,17 +89,38 @@ workspace:
     max-backoff-seconds: ${WORKSPACE_PROVISIONING_MAX_BACKOFF_SECONDS:900}
     # How long a claimed job may stay IN_PROGRESS before another worker assumes the claimant died
     # and re-claims it. Must comfortably exceed a worst-case provisioning call.
-    lease-seconds: ${WORKSPACE_PROVISIONING_LEASE_SECONDS:300}
+    lease-seconds: ${WORKSPACE_PROVISIONING_LEASE_SECONDS:600}
+
+#TENANT PROVISIONING + TENANT-AWARE AUTH
+tenant:
+  provisioning:
+    default-plan: ${TENANT_DEFAULT_PLAN:FREE_TRIAL}
+    trial-days: ${TENANT_TRIAL_DAYS:14}
+    trial-limits: ${TENANT_TRIAL_LIMITS:{"seats":5,"apiCallsPerMonth":100000,"storageGb":5}}
+  auth:
+    # Short-lived by design: the access token cannot be revoked once signed, so its blast radius
+    # is bounded by its lifetime. Revocation works through the session row the token names.
+    access-token-ttl-seconds: ${TENANT_ACCESS_TOKEN_TTL_SECONDS:900}
+    refresh-token-ttl-seconds: ${TENANT_REFRESH_TOKEN_TTL_SECONDS:2592000}
+    session-ttl-seconds: ${TENANT_SESSION_TTL_SECONDS:2592000}
+    refresh-cookie-name: ${TENANT_REFRESH_COOKIE_NAME:tenant_refresh_token}
 
 logging:
   level:
-    org.flywaydb: DEBUG
-    org:
-      springframework:
-        security: DEBUG
+    # Everything this service logs itself: onboarding funnel, provisioning pipeline, tenant auth.
+    # All levels are env-overridable so deployed environments can dial them back without editing
+    # this file.
+    com.tenantos.registrar: ${LOG_LEVEL_APP:TRACE}
+    org.springframework: ${LOG_LEVEL_SPRING:INFO}
+    org.flywaydb: ${LOG_LEVEL_FLYWAY:DEBUG}
 
 #SECURITY CONFIGURATION
 security:
+  jwt:
+    # Blank generates an ephemeral per-process key - fine locally, but tokens then die at restart
+    # and are rejected by other replicas. Must be set before running more than one instance.
+    secret: ${JWT_SECRET:}
+    ttl-seconds: ${JWT_TTL_SECONDS:3600}
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000}
     allowed-methods: ${CORS_ALLOWED_METHODS:GET,POST,PUT,DELETE,OPTIONS}
@@ -119,9 +140,9 @@ ratelimit:
 
 #AWS SDK CONFIGURATION
 aws:
-  region: ${AWS_REGION:}
+  region: ${AWS_REGION:us-west-2}
   eks:
-    cluster-name: ${EKS_CLUSTER_NAME:}
+    cluster-name: ${EKS_CLUSTER_NAME:dev_infra_cluster}
 
 server:
   port: ${PORT:8085}

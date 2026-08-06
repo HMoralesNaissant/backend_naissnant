@@ -139,7 +139,6 @@ class OnboardingRestControllerTest {
         TenantsRegistration.builder()
             .companyEmail("a@example.com")
             .fullName("Full Name")
-            .password("bcrypt-hash")
             .accountName("acme")
             .status(TenantsRegistrationStatus.COMPLETED)
             .build();

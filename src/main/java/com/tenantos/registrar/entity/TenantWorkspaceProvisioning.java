@@ -1,5 +1,6 @@
 package com.tenantos.registrar.entity;
 
+import com.tenantos.registrar.enums.ProvisioningStep;
 import com.tenantos.registrar.enums.TenantsRegistrationStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -43,6 +44,16 @@ public class TenantWorkspaceProvisioning extends BaseAuditFields {
   @Column(name = "status", length = 30, nullable = false)
   @Default
   private TenantsRegistrationStatus status = TenantsRegistrationStatus.WORKSPACE_PENDING;
+
+  /**
+   * Where the pipeline resumes. Each database-backed step advances this in the same transaction as
+   * its own work, so a retry re-enters at the step that failed rather than replaying the ones that
+   * already committed.
+   */
+  @Enumerated(EnumType.STRING)
+  @Column(name = "current_step", length = 40, nullable = false)
+  @Default
+  private ProvisioningStep currentStep = ProvisioningStep.CREATE_USER;
 
   /** The Kubernetes namespace actually provisioned; null until the job succeeds. */
   @Column(name = "namespace", length = 63)

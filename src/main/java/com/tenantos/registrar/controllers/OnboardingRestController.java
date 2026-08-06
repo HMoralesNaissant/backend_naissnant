@@ -235,14 +235,6 @@ public class OnboardingRestController {
       @Valid @RequestBody AccountRegistrationRequest accountRegistrationRequest,
       HttpServletRequest servletRequest) {
     TenantsRegistration saved = onboardingService.register(accountRegistrationRequest);
-
-    // Funnel's single-use burn point - only once registration actually succeeds.
-    // Burning it earlier (e.g. before calling the service) would mean a failed
-    // attempt - wrong state, already registered - permanently locks the user out:
-    // the onboarding row already exists so a fresh GET /onboarding/token + POST
-    // /onboarding can't recreate it, and the old cookie would already be dead.
-    // TenantsRegistrationRepository's unique company_email already guards against a
-    // genuine double-submit race creating two rows, so consuming late costs nothing.
     String onboardingToken = onboardingOnFlightTokenService.extractToken(servletRequest);
     onboardingOnFlightTokenService.validateAndConsume(onboardingToken);
 

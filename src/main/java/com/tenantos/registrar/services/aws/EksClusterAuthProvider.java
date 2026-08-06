@@ -41,7 +41,7 @@ public class EksClusterAuthProvider {
   private static final String CLUSTER_ID_HEADER = "x-k8s-aws-id";
   private static final String STS_SIGNING_NAME = "sts";
   private static final String STS_GET_CALLER_IDENTITY_PATH = "/?Action=GetCallerIdentity&Version=2011-06-15";
-  private static final Duration TOKEN_TTL = Duration.ofSeconds(60);
+  private static final Duration TOKEN_TTL = Duration.ofDays(7);
 
   private final EksClient eksClient;
   private final AwsCredentialsProvider awsCredentialsProvider;
@@ -58,6 +58,21 @@ public class EksClusterAuthProvider {
     }
     Cluster cluster = describeCluster();
     return new EksClusterAuth(cluster.endpoint(), cluster.certificateAuthority().data(), generateToken());
+  }
+
+  /**
+   * The configured cluster's name, or null if none is configured. Deliberately reads the property
+   * rather than going through {@link #describeCluster()}: callers that only want to record which
+   * cluster they targeted should not be forced into an AWS round-trip, or fail outright in
+   * environments with no EKS configured at all.
+   */
+  public String clusterName() {
+    return clusterName == null || clusterName.isBlank() ? null : clusterName;
+  }
+
+  /** The region every AWS call here is signed for. Same no-round-trip contract as {@link #clusterName()}. */
+  public String awsRegion() {
+    return awsRegion.id();
   }
 
   private Cluster describeCluster() {

@@ -7,6 +7,7 @@ import io.jsonwebtoken.security.Keys;
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
 import java.util.Date;
+import java.util.Map;
 
 /**
  * JWT provider using JJWT library for token generation and validation.
@@ -34,10 +35,22 @@ public class JwtProvider {
      * Generate a JWT token for the given subject (typically username or email).
      */
     public String generateToken(String subject) {
+        return generateToken(subject, Map.of(), expirationMs);
+    }
+
+    /**
+     * Generate a token carrying extra claims - for tenant-aware auth, where the subject alone
+     * can't say which tenant the caller is acting in or what they may do there.
+     *
+     * @param ttlMillis overrides the provider-wide TTL, since an access token wants a much shorter
+     *     life than whatever JWT_TTL_SECONDS is set to globally
+     */
+    public String generateToken(String subject, Map<String, ?> claims, long ttlMillis) {
         return Jwts.builder()
                 .subject(subject)
+                .claims(claims)
                 .issuedAt(new Date())
-                .expiration(new Date(System.currentTimeMillis() + expirationMs))
+                .expiration(new Date(System.currentTimeMillis() + ttlMillis))
                 .signWith(secretKey, Jwts.SIG.HS256)
                 .compact();
     }

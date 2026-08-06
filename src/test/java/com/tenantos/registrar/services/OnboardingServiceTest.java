@@ -235,8 +235,12 @@ class OnboardingServiceTest {
 
         TenantsRegistration saved = service.register(command());
 
-        assertThat(saved.getPassword()).isEqualTo("bcrypt-hash");
-        assertThat(saved.getPassword()).isNotEqualTo("raw-password");
+        // register() no longer creates the User - the CREATE_USER provisioning step does. What it
+        // still owns is the hashing, because bcrypt needs the plaintext that only exists during
+        // this request, so it stages the hash for that step to consume.
+        assertThat(saved.getPasswordHash()).isEqualTo("bcrypt-hash");
+        assertThat(saved.getPasswordHash()).isNotEqualTo("raw-password");
+
         assertThat(saved.getCompanyEmail()).isEqualTo("a@example.com");
         assertThat(saved.getFullName()).isEqualTo("Full Name");
         assertThat(saved.getAccountName()).isEqualTo("acme");

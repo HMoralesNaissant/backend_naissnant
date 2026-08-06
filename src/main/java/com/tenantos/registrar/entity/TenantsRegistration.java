@@ -13,6 +13,8 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 import lombok.experimental.SuperBuilder;
 
+import java.util.UUID;
+
 /**
  * JPA entity mapping for the tenants_registration table (V1__initial_setup.sql).
  * Created once an onboarding record's OTP has been validated.
@@ -32,13 +34,25 @@ public class TenantsRegistration extends BaseAuditFields {
     @Column(name = "full_name", length = 200)
     private String fullName;
 
-    // Column is named "password" per the existing migration, but this always holds a
-    // BCrypt hash (via the PasswordEncoder bean in SecurityConfig) - never plaintext.
-    @Column(name = "password", length = 200)
-    private String password;
-
     @Column(name = "account_name", length = 100)
     private String accountName;
+
+    /**
+     * Transient handoff to the CREATE_USER provisioning step, not a credential store. Bcrypt needs
+     * the plaintext password, which only exists during the registration request, so register()
+     * hashes it and stages the result here; CREATE_USER creates the user and nulls this in the same
+     * transaction. users.password_hash is the permanent home.
+     */
+    @Column(name = "password_hash", length = 200)
+    private String passwordHash;
+
+    // No user_id here on purpose: users.email is UNIQUE and always equals company_email, so the
+    // user is reachable by lookup and a column would only duplicate the relationship. Provisioning
+    // steps resolve it via UserRepository.findByEmail(companyEmail).
+
+    // Filled in by the CREATE_TENANT provisioning step - null until the pipeline gets there.
+    @Column(name = "tenant_id")
+    private UUID tenantId;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "status", length = 20, nullable = false)
