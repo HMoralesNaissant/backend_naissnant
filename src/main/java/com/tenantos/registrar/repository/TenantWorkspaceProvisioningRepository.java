@@ -24,7 +24,7 @@ public interface TenantWorkspaceProvisioningRepository
    *
    * <p>Picks up two kinds of row - jobs due for their next attempt, and jobs left IN_PROGRESS by a
    * worker that died before finishing (claimed_at older than the lease). Re-running the latter is
-   * safe because TenantWorkspaceInitialization uses serverSideApply, so re-applying an already
+   * safe because EksNamespaceProvisioner uses serverSideApply, so re-applying an already
    * created namespace is a no-op.
    *
    * <p>Native query: FOR UPDATE SKIP LOCKED has no JPQL equivalent.

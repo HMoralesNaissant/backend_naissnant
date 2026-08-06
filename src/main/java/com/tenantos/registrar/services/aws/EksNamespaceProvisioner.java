@@ -6,10 +6,6 @@ import com.tenantos.registrar.entity.Tenant;
 
 import io.fabric8.kubernetes.api.model.Namespace;
 import io.fabric8.kubernetes.api.model.NamespaceBuilder;
-import io.fabric8.kubernetes.client.Config;
-import io.fabric8.kubernetes.client.ConfigBuilder;
-import io.fabric8.kubernetes.client.KubernetesClient;
-import io.fabric8.kubernetes.client.KubernetesClientBuilder;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -37,6 +33,7 @@ public class EksNamespaceProvisioner {
   private static final int MAX_NAMESPACE_LENGTH = 63;
 
   private final EksClusterAuthProvider eksClusterAuthProvider;
+  private final KubernetesClientFactory kubernetesClientFactory;
 
   /**
    * Creates (or updates, if already present) the tenant's namespace. Returns the name together with
@@ -48,15 +45,8 @@ public class EksNamespaceProvisioner {
    */
   public ProvisionedNamespace initializeWorkspace(Tenant tenant) {
     String namespaceName = namespaceNameFor(tenant.getSlug());
-    EksClusterAuth auth = eksClusterAuthProvider.authenticate();
 
-    Config config = new ConfigBuilder()
-        .withMasterUrl(auth.endpoint())
-        .withCaCertData(auth.certificateAuthorityData())
-        .withOauthToken(auth.token())
-        .build();
-
-    try (KubernetesClient client = new KubernetesClientBuilder().withConfig(config).build()) {
+    try (KubernetesClientFactory.AuthenticatedClient session = kubernetesClientFactory.open()) {
       Namespace namespace = new NamespaceBuilder()
           .withNewMetadata()
             .withName(namespaceName)
@@ -66,15 +56,15 @@ public class EksNamespaceProvisioner {
           .endMetadata()
           .build();
 
-      client.resource(namespace).serverSideApply();
+      session.client().resource(namespace).serverSideApply();
       log.info("Provisioned workspace namespace {} for tenant {}", namespaceName, tenant.getId());
-    }
 
-    return new ProvisionedNamespace(
-        namespaceName,
-        eksClusterAuthProvider.clusterName(),
-        auth.endpoint(),
-        eksClusterAuthProvider.awsRegion());
+      return new ProvisionedNamespace(
+          namespaceName,
+          eksClusterAuthProvider.clusterName(),
+          session.auth().endpoint(),
+          eksClusterAuthProvider.awsRegion());
+    }
   }
 
   /**

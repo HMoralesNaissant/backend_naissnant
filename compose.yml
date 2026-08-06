@@ -20,6 +20,35 @@ services:
     networks:
       - default
 
+  # Tenant data lives on its own server, never the registrar's. Separate blast radius: a runaway
+  # tenant query, a restore, or a version upgrade on this one must not touch the control plane.
+  # Locally that is a second container; in production a separate RDS/Aurora cluster.
+  tenant-postgres:
+    image: postgres:16-alpine
+    container_name: tenantos-tenant-data-postgres
+    restart: unless-stopped
+    environment:
+      # The container hands you a superuser. Production should instead use a role with just
+      # CREATEDB and CREATEROLE - the registrar needs nothing more than that to provision a tenant.
+      POSTGRES_USER: ${TENANT_DB_ADMIN_USER}
+      POSTGRES_PASSWORD: ${TENANT_DB_ADMIN_PASSWORD}
+      # The admin connects here to issue CREATE DATABASE, which cannot be run from inside the
+      # database being created.
+      POSTGRES_DB: postgres
+    ports:
+      # 54321 is the registrar's; 54322 is already taken by tenantos-backend-postgres, another
+      # service in the same multi-tenant project.
+      - "54323:5432"
+    volumes:
+      - ../tenantos-tenant-data-pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${TENANT_DB_ADMIN_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - default
+
   mailpit:
     image: axllent/mailpit:latest
     container_name: tenantos-registrar-mailpit

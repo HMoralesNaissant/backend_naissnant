@@ -73,7 +73,8 @@ sequenceDiagram
     W->>DB: 5 CREATE_SUBSCRIPTION — free trial
     W->>DB: 6 CREATE_API_KEY — internal key (hash only)
     W->>EKS: 7 CREATE_NAMESPACE — serverSideApply
-    W->>M: 8 SEND_CONFIRMATION
+    W->>EKS: 8 CREATE_TENANT_DATABASE — CREATE DATABASE + publish credential
+    W->>M: 9 SEND_CONFIRMATION
     W->>DB: status = WORKSPACE_READY
 
     loop until READY or FAILED
@@ -107,10 +108,23 @@ call, which is acceptable only because the work either side of the commit is gen
 `serverSideApply` re-applies an identical namespace harmlessly, and `tenant_namespace` is keyed on
 `tenant_id`, so a retry upserts rather than duplicates.
 
-`SEND_CONFIRMATION` is the real exception. It implements `TenantProvisioningStep` directly and
-advances through `TenantWorkspaceProvisioningStore.advance()` in a separate transaction, because an
-SMTP send cannot be rolled back. A crash in the gap costs a duplicate confirmation email, which is
-cosmetic rather than a correctness problem.
+`SEND_CONFIRMATION` and `CREATE_TENANT_DATABASE` are the exceptions. Both implement
+`TenantProvisioningStep` directly and advance through `TenantWorkspaceProvisioningStore.advance()`
+in a separate transaction.
+
+For `SEND_CONFIRMATION` that is a choice — an SMTP send cannot be rolled back, and a crash in the
+gap costs a duplicate email, cosmetic rather than incorrect.
+
+For `CREATE_TENANT_DATABASE` it is not a choice at all: **Postgres rejects `CREATE DATABASE` inside
+a transaction block**, so the step could not be transactional even if that were desirable. It pays
+for that with convergence rather than skipping. Postgres offers no `CREATE DATABASE IF NOT EXISTS`
+and no way to read a role's password back, so a retry cannot recover what the last attempt
+generated — instead every run mints a fresh password, `ALTER ROLE`s it if the role already exists,
+and republishes to both secret stores. Whatever a crash left behind, the next attempt lands on the
+same known state.
+
+The visible cost: a failed attempt can leave a live Secrets Manager value that no longer opens the
+database, until the retry catches up.
 
 Three further guards make double-provisioning impossible even if a job were somehow claimed twice:
 
@@ -136,6 +150,7 @@ erDiagram
 
     tenants ||--|| tenant_settings : configures
     tenants ||--|| tenant_namespace : "runs in"
+    tenants ||--|| tenant_database : "stores data in"
     tenants ||--o{ tenant_members : has
     tenants ||--o{ roles : defines
     tenants ||--o{ subscriptions : bills
@@ -171,7 +186,7 @@ loudly if `CREATE_USER` has not run. (V5 dropped the column.)
 
 **`tenants`** — The tenant root. `slug` is `UNIQUE` and capped at 63 characters so it is a valid
 RFC 1123 DNS label and can be used verbatim as the Kubernetes namespace suffix (`tenant-<slug>`).
-That uniqueness is load-bearing: before this change, `TenantWorkspaceInitialization` sanitized the
+That uniqueness is load-bearing: before this change, the namespace provisioner sanitized the
 free-text account name at provisioning time, so two tenants both called "Acme" silently targeted
 the same namespace. Generating the slug once, checking it against `existsBySlug`, and persisting it
 makes the namespace collision-free by construction.
@@ -189,6 +204,33 @@ fact about the tenant. The old column also named no cluster at all, so a second 
 replaced one — would leave existing tenants unlocatable. `namespace` is `UNIQUE` for the same reason
 `tenants.slug` is: two tenants sharing a namespace is a cross-tenant leak, not a duplicate row. The
 cluster columns are nullable because only the live EKS path knows them.
+
+**`tenant_database`** (V7) — 1:1 with `tenants`, keyed on `tenant_id`, recording the tenant's own
+Postgres database: its name, its login role, and the host/port their workloads dial. Written by
+`CreateTenantDatabaseStep`.
+
+The databases live on a server **separate from this one**. Tenant data and the control plane in one
+instance would mean a runaway tenant query, a restore, or a version upgrade reaching the registrar;
+locally that separation is a second container (`tenant-postgres`, port `54322`), in production a
+separate RDS/Aurora cluster. `database_name` and `role_name` are both `UNIQUE` for the reason
+`tenant_namespace.namespace` is — two tenants sharing either is a cross-tenant leak.
+
+**Isolation rests on one statement.** `REVOKE ALL ON DATABASE … FROM PUBLIC`, run as each database
+is created, is the only thing stopping one tenant's role from opening another's database — Postgres
+grants CONNECT to PUBLIC by default. `TenantDatabaseProvisionerTest` asserts it directly, because
+removing that line breaks nothing else visible.
+
+It does not cover the cluster's own `postgres` database, which still accepts any role and exposes
+the catalog — other tenants' database and role *names* are readable, though none of their data is.
+Closing that is a cluster-build step (`REVOKE CONNECT ON DATABASE postgres FROM PUBLIC`), not
+something the provisioning step can do to the database its own admin connects through.
+
+**The table holds no password.** The credential is published to AWS Secrets Manager (the system of
+record) and mirrored into a Kubernetes `Secret` in the tenant's namespace; the three `secret_*`
+columns are pointers to those, and are nullable because either publisher can be switched off. This
+is the same stance `CreateApiKeyStep` takes on its plaintext, with one difference that matters: an
+API key hash is enough to *verify* a credential, but a database password must be *presented*, so
+"forget it" only works because something else is remembering it.
 
 **`tenant_members`** — Membership has its own lifecycle (`INVITED → ACTIVE → SUSPENDED → REMOVED`)
 independent of both the user and the tenant, so it is a table rather than a column on either. This
@@ -257,7 +299,7 @@ OnboardingService.register()               validate + enqueue; commits registrat
        └─ runPendingBatch()  claims and walks the pipeline; holds no transaction itself
             ├─ TenantWorkspaceProvisioningStore   claim / advance / markReady / recordFailure
             │                                     (separate bean — see below)
-            └─ TenantProvisioningStep × 8
+            └─ TenantProvisioningStep × 9
                  ├─ CreateUserStep          ─┐
                  ├─ CreateTenantStep         │
                  ├─ SeedRbacStep             │ extend AbstractTransactionalStep:
@@ -266,6 +308,9 @@ OnboardingService.register()               validate + enqueue; commits registrat
                  ├─ CreateApiKeyStep         │
                  ├─ CreateNamespaceStep     ─┘ (also external I/O; safe because the EKS
                  │                             apply and tenant_namespace are both idempotent)
+                 ├─ CreateTenantDatabaseStep external I/O, own advance — CANNOT be
+                 │                           transactional: CREATE DATABASE is rejected
+                 │                           inside a transaction block
                  └─ SendConfirmationStep     external I/O, own advance, failure-tolerant
 ```
 
@@ -293,7 +338,9 @@ bean handles each `ProvisioningStep`. A missing or duplicated step fails the con
 than stranding a tenant's job at 3am.
 
 **Dependencies.** `TenantSlugGenerator` (normalization + collision suffixes),
-`TenantWorkspaceInitialization` (EKS namespace via `EksClusterAuthProvider`),
+`EksNamespaceProvisioner` (EKS namespace via `KubernetesClientFactory`),
+`TenantDatabaseProvisioner` (per-tenant Postgres), `TenantDbSecretWriter` +
+`TenantDbSecretsManagerPublisher` (credential publishing),
 `OnboardingEmailService` (confirmation), `HashUtils` (SHA-256 for the API key), plus the
 repositories.
 

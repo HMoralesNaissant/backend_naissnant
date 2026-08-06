@@ -19,6 +19,10 @@ public enum ProvisioningStep {
   CREATE_SUBSCRIPTION,
   CREATE_API_KEY,
   CREATE_NAMESPACE,
+  // After the namespace, because the credentials are published into it as a Secret. Before the
+  // confirmation, because a tenant should not be told their workspace is ready while it has
+  // nowhere to store data.
+  CREATE_TENANT_DATABASE,
   SEND_CONFIRMATION,
   COMPLETED;
 

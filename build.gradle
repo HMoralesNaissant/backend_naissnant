@@ -72,6 +72,9 @@ dependencies {
     implementation 'software.amazon.awssdk:eks'
     implementation 'software.amazon.awssdk:http-auth-aws'
 
+    //AWS SDK v2 - system of record for per-tenant database credentials
+    implementation 'software.amazon.awssdk:secretsmanager'
+
     //Kubernetes client - talks to the EKS control plane using EksClusterAuthProvider's token
     implementation 'io.fabric8:kubernetes-client:7.8.0'
 

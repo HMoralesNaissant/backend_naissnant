@@ -11,7 +11,7 @@ import java.util.regex.Pattern;
  * Turns a user-supplied account name into a tenant slug: normalized, collision-free, and valid as
  * an RFC 1123 DNS label so it can be used verbatim as the tenant's Kubernetes namespace suffix.
  *
- * <p>The normalization rules moved here from {@code TenantWorkspaceInitialization}, which used to
+ * <p>The normalization rules moved here from {@code EksNamespaceProvisioner}, which used to
  * sanitize the account name itself on every provisioning run. Doing it once at tenant creation and
  * persisting the result to {@code tenants.slug} fixes a real defect in that approach: two accounts
  * named "Acme" sanitized to the same namespace, and nothing detected the clash. The slug column is

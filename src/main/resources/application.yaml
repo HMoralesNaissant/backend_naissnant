@@ -97,6 +97,32 @@ tenant:
     default-plan: ${TENANT_DEFAULT_PLAN:FREE_TRIAL}
     trial-days: ${TENANT_TRIAL_DAYS:14}
     trial-limits: ${TENANT_TRIAL_LIMITS:{"seats":5,"apiCallsPerMonth":100000,"storageGb":5}}
+  #PER-TENANT DATABASE (CREATE_TENANT_DATABASE step)
+  database:
+    # Off switches the step into a log-and-advance no-op. Without it, any environment with no
+    # tenant-data server would dead-letter every job here - the same lesson as
+    # workspace.provisioning.enabled above.
+    enabled: ${TENANT_DATABASE_ENABLED:true}
+    # The tenant-data server, deliberately not spring.datasource: tenant data and the control plane
+    # belong in separate blast radii. Locally this is the tenant-postgres container on 54323.
+    # The admin role needs only CREATEDB and CREATEROLE, not superuser.
+    admin-url: ${TENANT_DB_ADMIN_URL:jdbc:postgresql://localhost:54323/postgres}
+    admin-user: ${TENANT_DB_ADMIN_USER:}
+    admin-password: ${TENANT_DB_ADMIN_PASSWORD:}
+    # What gets published to the tenant - what their workloads dial, which is not necessarily how
+    # the registrar reached the server above. In-cluster pods resolve a service name; the registrar
+    # may come via a bastion or a different DNS name entirely.
+    host: ${TENANT_DB_HOST:localhost}
+    port: ${TENANT_DB_PORT:54323}
+    # Per-role cap, so one tenant cannot exhaust the server's max_connections on its own.
+    connection-limit: ${TENANT_DB_CONNECTION_LIMIT:20}
+    secret:
+      # Off locally: there are no AWS credentials here, and a hard failure would dead-letter every
+      # job at this step.
+      secrets-manager-enabled: ${TENANT_DB_SECRETS_MANAGER_ENABLED:false}
+      kubernetes-enabled: ${TENANT_DB_K8S_SECRET_ENABLED:true}
+      name-prefix: ${TENANT_DB_SECRET_PREFIX:tenantos/tenant}
+      kubernetes-name: ${TENANT_DB_K8S_SECRET_NAME:tenant-db-credentials}
   auth:
     # Short-lived by design: the access token cannot be revoked once signed, so its blast radius
     # is bounded by its lifetime. Revocation works through the session row the token names.
