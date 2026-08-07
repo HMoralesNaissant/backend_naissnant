@@ -3,7 +3,6 @@ package com.tenantos.registrar.services.tenant.steps.data_provision;
 import com.tenantos.registrar.entity.AuditLog;
 import com.tenantos.registrar.entity.Tenant;
 import com.tenantos.registrar.entity.TenantDatabase;
-import com.tenantos.registrar.entity.TenantNamespace;
 import com.tenantos.registrar.entity.TenantWorkspaceProvisioning;
 import com.tenantos.registrar.entity.TenantsRegistration;
 import com.tenantos.registrar.enums.AuditEventType;
@@ -15,11 +14,13 @@ import com.tenantos.registrar.repository.TenantRepository;
 import com.tenantos.registrar.repository.TenantsRegistrationRepository;
 import com.tenantos.registrar.repository.UserRepository;
 import com.tenantos.registrar.entity.User;
-import com.tenantos.registrar.services.aws.TenantDbSecretWriter;
+import com.tenantos.registrar.services.aws.TenantEksSecretWriter;
 import com.tenantos.registrar.services.aws.TenantDbSecretsManagerPublisher;
 import com.tenantos.registrar.services.database.ProvisionedTenantDatabase;
 import com.tenantos.registrar.services.database.TenantDatabaseProvisioner;
+import com.tenantos.registrar.services.database.TenantSchemaMigrator;
 import com.tenantos.registrar.services.tenant.TenantProvisioningStep;
+import com.tenantos.registrar.services.tenant.steps.records.ProvisionedAwsSecret;
 import com.tenantos.registrar.services.workspace.TenantWorkspaceProvisioningStore;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -52,18 +53,17 @@ public class CreateTenantDatabaseStep implements TenantProvisioningStep {
   @Value("${tenant.database.enabled:true}")
   private boolean enabled;
 
-  @Value("${tenant.database.secret.kubernetes-enabled:true}")
-  private boolean kubernetesSecretEnabled;
-
   private final TenantsRegistrationRepository tenantsRegistrationRepository;
   private final TenantRepository tenantRepository;
-  private final TenantNamespaceRepository tenantNamespaceRepository;
+
   private final TenantDatabaseRepository tenantDatabaseRepository;
   private final UserRepository userRepository;
   private final AuditLogRepository auditLogRepository;
   private final TenantDatabaseProvisioner tenantDatabaseProvisioner;
-  private final TenantDbSecretWriter tenantDbSecretWriter;
-  // Absent unless tenant.database.secret.secrets-manager-enabled is true - the publisher and its
+  private final TenantSchemaMigrator tenantSchemaMigrator;
+  private final TenantEksSecretWriter tenantEksSecretWriter;
+  // Absent unless tenant.database.secret.aws-secrets-manager-enabled is true - the publisher and
+  // its
   // client bean are both conditional, so environments with no AWS never construct either.
   private final Optional<TenantDbSecretsManagerPublisher> secretsManagerPublisher;
   private final TenantWorkspaceProvisioningStore store;
@@ -110,28 +110,24 @@ public class CreateTenantDatabaseStep implements TenantProvisioningStep {
 
     ProvisionedTenantDatabase provisioned = tenantDatabaseProvisioner.provision(tenant);
 
+    User user =
+        userRepository
+            .findByEmail(registration.getCompanyEmail())
+            .orElseThrow(
+                () ->
+                    new IllegalStateException(
+                        "No user for "
+                            + registration.getCompanyEmail()
+                            + " - CREATE_USER did not run"));
+    tenantSchemaMigrator.migrate(provisioned, user, tenant);
+
     // System of record first, mirror second. If only one write lands, the retry overwrites both.
     String secretArn =
-        secretsManagerPublisher.map(publisher -> publisher.publish(tenant, provisioned)).orElse(null);
+        secretsManagerPublisher
+            .map(publisher -> publisher.publish(tenant, provisioned))
+            .orElse(null);
 
-    String secretName = null;
-    String secretNamespace = null;
-    if (kubernetesSecretEnabled) {
-      // Failing loudly rather than deriving the name: an absent row means CREATE_NAMESPACE never
-      // ran, which is an ordering bug rather than a retryable condition - the same stance
-      // AbstractTransactionalStep.requireTenantId takes.
-      TenantNamespace tenantNamespace =
-          tenantNamespaceRepository
-              .findById(tenant.getId())
-              .orElseThrow(
-                  () ->
-                      new IllegalStateException(
-                          "No tenant_namespace row for "
-                              + tenant.getId()
-                              + " - CREATE_NAMESPACE did not run"));
-      secretNamespace = tenantNamespace.getNamespace();
-      secretName = tenantDbSecretWriter.write(tenant, secretNamespace, provisioned);
-    }
+    ProvisionedAwsSecret secret = tenantEksSecretWriter.write(tenant, provisioned);
 
     // Loaded before writing rather than rebuilt: saving a freshly built entity merges over the
     // stored row and carries the new instance's created_at with it, losing the first provision's
@@ -146,19 +142,17 @@ public class CreateTenantDatabaseStep implements TenantProvisioningStep {
     tenantDatabase.setHost(provisioned.host());
     tenantDatabase.setPort(provisioned.port());
     tenantDatabase.setSecretArn(secretArn);
-    tenantDatabase.setSecretName(secretName);
-    tenantDatabase.setSecretNamespace(secretNamespace);
+    tenantDatabase.setSecretName(
+        Optional.ofNullable(secret).map(ProvisionedAwsSecret::name).orElse(null));
+    tenantDatabase.setSecretNamespace(
+        Optional.ofNullable(secret).map(ProvisionedAwsSecret::namespace).orElse(null));
     tenantDatabase.setProvisionedAt(Instant.now());
     tenantDatabaseRepository.save(tenantDatabase);
 
     auditLogRepository.save(
         AuditLog.builder()
             .tenantId(tenant.getId())
-            .actorUserId(
-                userRepository
-                    .findByEmail(registration.getCompanyEmail())
-                    .map(User::getId)
-                    .orElse(null))
+            .actorUserId(user.getId())
             .eventType(AuditEventType.TENANT_DATABASE_CREATED)
             .resourceType("database")
             .resourceId(provisioned.databaseName())

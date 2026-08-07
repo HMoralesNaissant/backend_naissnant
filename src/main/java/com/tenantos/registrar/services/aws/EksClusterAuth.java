@@ -1,8 +1,12 @@
 package com.tenantos.registrar.services.aws;
 
 /**
- * Everything needed to talk to an EKS cluster's Kubernetes API server: the endpoint, its base64
- * certificate authority data (for TLS trust), and a short-lived IAM-backed bearer token
- * (aws-iam-authenticator's "k8s-aws-v1." scheme) to authenticate the request.
+ * Where an EKS cluster's Kubernetes API server lives and how to trust it: the endpoint, plus its
+ * base64 certificate authority data for TLS.
+ *
+ * <p>No token here, deliberately. A token is signed per request by
+ * {@link EksClusterAuthProvider#generateToken()} rather than handed over once at client-build time -
+ * EKS caps a token's signed lifetime at 15 minutes, so anything cached alongside the endpoint would
+ * be a deadline waiting to be hit.
  */
-public record EksClusterAuth(String endpoint, String certificateAuthorityData, String token) {}
+public record EksClusterAuth(String endpoint, String certificateAuthorityData) {}

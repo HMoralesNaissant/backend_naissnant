@@ -68,6 +68,13 @@ dependencies {
     implementation 'software.amazon.awssdk:regions'
     implementation 'software.amazon.awssdk:sts'
 
+    //AWS SDK v2 - SSO-backed named profiles (aws.local.profile). Never referenced directly in code;
+    //ProfileCredentialsProvider loads these reflectively, and throws "the 'sso' service module must
+    //be on the class path" at runtime without them. Both are needed: `sso` for the legacy cached-token
+    //profile, `sso-oidc` for the modern sso_session token-refresh flow `aws sso login` now sets up.
+    runtimeOnly 'software.amazon.awssdk:sso'
+    runtimeOnly 'software.amazon.awssdk:ssooidc'
+
     //AWS SDK v2 - EKS cluster discovery + IAM-based Kubernetes API authentication
     implementation 'software.amazon.awssdk:eks'
     implementation 'software.amazon.awssdk:http-auth-aws'

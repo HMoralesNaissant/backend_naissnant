@@ -1,6 +1,102 @@
 spring:
+  #DATABASE CONFIGURATION
   datasource:
     url: jdbc:postgresql://localhost:54321/tenantos_registrar?sslmode=disable&ApplicationName=tenantos-registrar-local
     username: tenantos-master
     password: c4rl0sP@ssw0rds
     driver-class-name: org.postgresql.Driver
+    hikari:
+      pool-name: tenantos-registrar-pool
+      minimum-idle: 2
+      maximum-pool-size: 10
+      idle-timeout: 300000
+      max-lifetime: 1800000
+      connection-timeout: 30000
+      validation-timeout: 5000
+      connection-test-query: SELECT 1
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: none
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+        format_sql: true
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+
+  #SQL DATABASE INITIALIZATION
+  sql:
+    init:
+      mode: never
+
+  #FLYWAY
+  flyway:
+    enabled: false
+    locations:
+      - classpath:db/migration
+    baselineOnMigrate: true
+    cleanDisabled: false
+
+  #MAIL
+  mail:
+    host: localhost
+    port: 1025
+
+  #THYMELEAF
+  thymeleaf:
+    prefix: classpath:/email/templates/
+
+#FRONTEND APP REGISTRATION CONFIGURATION
+fe:
+  onboarding:
+    otp-from-address: no-reply@tenantos.local
+    verify-url-template: http://localhost:3000/onboarding/verify?email={email}&vrfk={vrfk}
+    login-url: http://localhost:3000/login
+
+#BACKGROUND TENANT WORKSPACE PROVISIONING
+workspace:
+  provisioning:
+    enabled: true
+
+#TENANT PROVISIONING + TENANT-AWARE AUTH
+tenant:
+  database:
+    enabled: true
+    admin-url: jdbc:postgresql://localhost:54323/postgres
+    admin-user: tenantos-tenant-admin
+    admin-password: c4rl0sP@ssw0rds
+    host: localhost
+    port: 54323
+    secret:
+      aws-secrets-manager-enabled: true
+      kubernetes-enabled: true
+      name-prefix: tenantos/tenant
+      kubernetes-name: tenant-db-credentials
+
+#logging:
+#  level:
+#    com.tenantos.registrar: TRACE
+#    org.springframework: INFO
+#    org.flywaydb: DEBUG
+
+#SECURITY CONFIGURATION
+security:
+  jwt:
+    secret: any-jwt-secret-key
+  cors:
+    allowed-origins: http://localhost:3000
+
+
+#AWS SDK CONFIGURATION
+aws:
+  region: us-west-2
+  eks:
+    cluster-name: dev_infra_cluster
+  local:
+    assume-role-arn: arn:aws:iam::324711057459:role/Developer
+  profile: AdminSSO
+
+server:
+  port: 8080
+

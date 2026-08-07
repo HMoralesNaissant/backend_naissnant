@@ -58,6 +58,17 @@ public class TenantDatabaseProvisioner {
    */
   private static final Pattern SAFE_IDENTIFIER = Pattern.compile("^[a-z][a-z0-9_]{0,62}$");
 
+  /**
+   * What may be interpolated as the admin role's identifier in a GRANT statement. Wider than
+   * {@code SAFE_IDENTIFIER} on purpose: {@code adminUser} is not a tenant-derived slug but a value
+   * from configuration/environment ({@code TENANT_DB_ADMIN_USER}), and the default itself,
+   * "tenantos-tenant-admin", contains a hyphen {@code SAFE_IDENTIFIER} would reject. Still anchored
+   * and bounded to NAMEDATALEN - defence in depth against a misconfigured or malicious env var, for
+   * the same reason {@code SAFE_IDENTIFIER} exists.
+   */
+  private static final Pattern SAFE_ADMIN_IDENTIFIER =
+      Pattern.compile("^[A-Za-z][A-Za-z0-9_-]{0,62}$");
+
   @Value("${tenant.database.admin-url:}")
   private String adminUrl;
 
@@ -87,6 +98,7 @@ public class TenantDatabaseProvisioner {
   public ProvisionedTenantDatabase provision(Tenant tenant) {
     String databaseName = databaseNameFor(tenant.getSlug());
     String roleName = roleNameFor(tenant.getSlug());
+    String admin = requireSafeIdentifier(adminUser, SAFE_ADMIN_IDENTIFIER);
     String password = generatePassword();
 
     try (Connection connection =
@@ -95,8 +107,10 @@ public class TenantDatabaseProvisioner {
       connection.setAutoCommit(true);
 
       upsertRole(connection, roleName, password);
+      grantAdminRoleMembership(connection, roleName, admin);
       createDatabaseIfAbsent(connection, databaseName, roleName);
       revokePublicAccess(connection, databaseName);
+      grantAdminAccess(connection, databaseName, admin);
     } catch (SQLException e) {
       throw new IllegalStateException(
           "Failed to provision database " + databaseName + " for tenant " + tenant.getId(), e);
@@ -134,11 +148,11 @@ public class TenantDatabaseProvisioner {
     if (identifier.length() > MAX_IDENTIFIER_LENGTH) {
       identifier = identifier.substring(0, MAX_IDENTIFIER_LENGTH);
     }
-    return requireSafeIdentifier(identifier);
+    return requireSafeIdentifier(identifier, SAFE_IDENTIFIER);
   }
 
-  private String requireSafeIdentifier(String identifier) {
-    if (!SAFE_IDENTIFIER.matcher(identifier).matches()) {
+  private String requireSafeIdentifier(String identifier, Pattern pattern) {
+    if (!pattern.matcher(identifier).matches()) {
       throw new IllegalArgumentException(
           "Refusing to use \"" + identifier + "\" as a Postgres identifier");
     }
@@ -150,7 +164,7 @@ public class TenantDatabaseProvisioner {
    * the convergence point the whole retry story rests on: it is the only way to arrive at a known
    * password when the stored one cannot be read back.
    */
-  private void upsertRole(Connection connection, String roleName, String password)
+private void upsertRole(Connection connection, String roleName, String password)
       throws SQLException {
     boolean exists = exists(connection, "SELECT 1 FROM pg_roles WHERE rolname = ?", roleName);
 
@@ -173,6 +187,21 @@ public class TenantDatabaseProvisioner {
     }
   }
 
+  /**
+   * Makes the admin a member of the tenant's role. Postgres 16 does not grant CREATEROLE the right
+   * to act as a role it just created - only the right to grant itself membership - and {@code
+   * createDatabaseIfAbsent}'s {@code OWNER} clause needs to {@code SET ROLE} into {@code roleName}
+   * to succeed. Without this, a non-superuser admin (the production configuration) fails there with
+   * "must be able to SET ROLE". Granting membership a role already holds is a no-op, so this is
+   * idempotent for free and safe to run on every call.
+   */
+  private void grantAdminRoleMembership(Connection connection, String roleName, String admin)
+      throws SQLException {
+    try (Statement statement = connection.createStatement()) {
+      statement.executeUpdate("GRANT \"" + roleName + "\" TO \"" + admin + "\"");
+    }
+  }
+
   /** Postgres has no CREATE DATABASE IF NOT EXISTS, hence the catalog check. */
   private void createDatabaseIfAbsent(Connection connection, String databaseName, String roleName)
       throws SQLException {
@@ -189,7 +218,11 @@ public class TenantDatabaseProvisioner {
   /**
    * Without this every role on the server can connect to the new database, which would make
    * "a database per tenant" an organisational convention rather than a boundary. It is the single
-   * line stopping one tenant from opening another's database.
+   * line stopping one tenant from opening another's database - at the cost of also revoking the
+   * admin's own access, since in production this removes the same implicit PUBLIC grant that was
+   * the only thing letting a non-superuser admin connect. {@code grantAdminAccess}, called
+   * immediately after this in {@code provision}, re-grants that access explicitly and by name, so
+   * PUBLIC itself stays revoked.
    *
    * <p>What it does <em>not</em> cover: the server's own {@code postgres} database still grants
    * CONNECT to PUBLIC, as on any stock Postgres, so a tenant role can open it and read the catalog -
@@ -200,6 +233,21 @@ public class TenantDatabaseProvisioner {
   private void revokePublicAccess(Connection connection, String databaseName) throws SQLException {
     try (Statement statement = connection.createStatement()) {
       statement.executeUpdate("REVOKE ALL ON DATABASE \"" + databaseName + "\" FROM PUBLIC");
+    }
+  }
+
+  /**
+   * Re-grants the admin role CONNECT on the database {@code revokePublicAccess} just locked
+   * everyone else out of. The admin is deliberately not a superuser and not the database's owner
+   * (the tenant role is) in production, so once PUBLIC's implicit grant is gone, only an explicit
+   * grant keeps it able to reach a database it just created - needed for support, migrations and
+   * backups. Granting a privilege a role already holds is a no-op, so this is idempotent for free.
+   */
+  private void grantAdminAccess(Connection connection, String databaseName, String admin)
+      throws SQLException {
+    try (Statement statement = connection.createStatement()) {
+      statement.executeUpdate(
+          "GRANT CONNECT ON DATABASE \"" + databaseName + "\" TO \"" + admin + "\"");
     }
   }
 

@@ -1,4 +1,6 @@
-package com.tenantos.registrar.services.workspace;
+package com.tenantos.registrar.services.workspace.records;
+
+import com.tenantos.registrar.services.workspace.TenantWorkspaceProvisioningListener;
 
 /**
  * Published by {@code OnboardingService.register()} once a tenant's workspace job has been

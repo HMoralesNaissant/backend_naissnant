@@ -1,8 +1,6 @@
 package com.tenantos.registrar.services.aws;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.tenantos.registrar.entity.Tenant;
 import com.tenantos.registrar.services.database.ProvisionedTenantDatabase;
 import lombok.RequiredArgsConstructor;
@@ -15,10 +13,13 @@ import software.amazon.awssdk.services.secretsmanager.model.CreateSecretRequest;
 import software.amazon.awssdk.services.secretsmanager.model.PutSecretValueRequest;
 import software.amazon.awssdk.services.secretsmanager.model.ResourceExistsException;
 import software.amazon.awssdk.services.secretsmanager.model.Tag;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ObjectNode;
 
 /**
  * Publishes a tenant's database credential to AWS Secrets Manager, the system of record for it.
- * The Kubernetes Secret written by {@link TenantDbSecretWriter} is a mirror of this.
+ * The Kubernetes Secret written by {@link TenantEksSecretWriter} is a mirror of this.
  *
  * <p>The stored document deliberately uses the same field names as an RDS-managed secret
  * ({@code host}, {@code port}, {@code dbname}, {@code username}, {@code password},
@@ -39,7 +40,7 @@ import software.amazon.awssdk.services.secretsmanager.model.Tag;
 @Slf4j
 @RequiredArgsConstructor
 @ConditionalOnProperty(
-    value = "tenant.database.secret.secrets-manager-enabled",
+    value = "tenant.database.secret.aws-secrets-manager-enabled",
     havingValue = "true")
 public class TenantDbSecretsManagerPublisher {
 
@@ -111,7 +112,7 @@ public class TenantDbSecretsManagerPublisher {
     node.put("jdbcUrl", database.jdbcUrl());
     try {
       return objectMapper.writeValueAsString(node);
-    } catch (JsonProcessingException e) {
+    } catch (JacksonException e) {
       // Not reachable for a flat ObjectNode of strings and ints, but the message must never carry
       // the node itself - it holds the password.
       throw new IllegalStateException("Could not serialise the tenant database secret", e);

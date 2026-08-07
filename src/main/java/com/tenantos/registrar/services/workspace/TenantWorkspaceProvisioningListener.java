@@ -1,5 +1,6 @@
 package com.tenantos.registrar.services.workspace;
 
+import com.tenantos.registrar.services.workspace.records.TenantWorkspaceRequestedEvent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;

@@ -146,6 +146,38 @@ class TenantDatabaseProvisionerTest {
     }
   }
 
+  @Test
+  void provision_letsTheAdminReconnectAfterRevokingPublicAccess() throws SQLException {
+    ProvisionedTenantDatabase provisioned = provisioner.provision(tenant);
+
+    // revokePublicAccess takes PUBLIC's implicit CONNECT away; grantAdminAccess puts the admin
+    // role's own access back explicitly, so it isn't locked out of what it just created.
+    try (Connection adminConnection =
+        DriverManager.getConnection(provisioned.jdbcUrl(), ADMIN_USER, ADMIN_PASSWORD)) {
+      assertThat(adminConnection.isValid(5)).isTrue();
+    }
+  }
+
+  @Test
+  void provision_grantsTheAdminMembershipInTheTenantRole() throws SQLException {
+    ProvisionedTenantDatabase provisioned = provisioner.provision(tenant);
+
+    // CREATE DATABASE ... OWNER needs the admin to SET ROLE into the tenant role; on a real
+    // (non-superuser) admin that requires explicit membership, not just the right to grant it.
+    try (Connection admin = adminConnection();
+        Statement statement = admin.createStatement();
+        ResultSet resultSet =
+            statement.executeQuery(
+                "SELECT pg_has_role('"
+                    + ADMIN_USER
+                    + "', '"
+                    + provisioned.roleName()
+                    + "', 'member')")) {
+      resultSet.next();
+      assertThat(resultSet.getBoolean(1)).isTrue();
+    }
+  }
+
   private void dropTenant(String name) {
     try (Connection admin = adminConnection();
         Statement statement = admin.createStatement()) {

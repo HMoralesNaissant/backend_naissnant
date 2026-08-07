@@ -1,7 +1,10 @@
 package com.tenantos.registrar.services.aws;
 
 import com.tenantos.registrar.entity.Tenant;
+import com.tenantos.registrar.entity.TenantNamespace;
+import com.tenantos.registrar.repository.TenantNamespaceRepository;
 import com.tenantos.registrar.services.database.ProvisionedTenantDatabase;
+import com.tenantos.registrar.services.tenant.steps.records.ProvisionedAwsSecret;
 import io.fabric8.kubernetes.api.model.Secret;
 import io.fabric8.kubernetes.api.model.SecretBuilder;
 import lombok.RequiredArgsConstructor;
@@ -26,7 +29,7 @@ import java.util.Map;
 @Service
 @Slf4j
 @RequiredArgsConstructor
-public class TenantDbSecretWriter {
+public class TenantEksSecretWriter {
 
   private static final String MANAGED_BY_LABEL = "app.kubernetes.io/managed-by";
   private static final String MANAGED_BY_VALUE = "tenantos-registrar";
@@ -37,15 +40,36 @@ public class TenantDbSecretWriter {
   @Value("${tenant.database.secret.kubernetes-name:tenant-db-credentials}")
   private String secretName;
 
+  @Value("${tenant.database.secret.kubernetes-enabled:true}")
+  private boolean kubernetesSecretEnabled;
+
   private final KubernetesClientFactory kubernetesClientFactory;
+  private final TenantNamespaceRepository tenantNamespaceRepository;
 
   /**
    * Writes (or overwrites) the credential Secret in the tenant's namespace and returns the name it
    * was written under.
-   *
-   * @param namespace the tenant's namespace, created earlier by CREATE_NAMESPACE
    */
-  public String write(Tenant tenant, String namespace, ProvisionedTenantDatabase database) {
+  public ProvisionedAwsSecret write(Tenant tenant, ProvisionedTenantDatabase database) {
+
+    if (!kubernetesSecretEnabled) {
+      return new ProvisionedAwsSecret(null, null);
+    }
+    String secretNamespace = null;
+    // Failing loudly rather than deriving the name: an absent row means CREATE_NAMESPACE never
+    // ran, which is an ordering bug rather than a retryable condition - the same stance
+    // AbstractTransactionalStep.requireTenantId takes.
+    TenantNamespace tenantNamespace =
+        tenantNamespaceRepository
+            .findById(tenant.getId())
+            .orElseThrow(
+                () ->
+                    new IllegalStateException(
+                        "No tenant_namespace row for "
+                            + tenant.getId()
+                            + " - CREATE_NAMESPACE did not run"));
+    secretNamespace = tenantNamespace.getNamespace();
+
     // stringData rather than data: Kubernetes base64-encodes it on the way in, so nothing here
     // needs to encode by hand - and a hand-rolled encode is the classic way to store a secret
     // that silently does not work.
@@ -63,7 +87,7 @@ public class TenantDbSecretWriter {
             .withType(SECRET_TYPE)
             .withNewMetadata()
             .withName(secretName)
-            .withNamespace(namespace)
+            .withNamespace(secretNamespace)
             .addToLabels(MANAGED_BY_LABEL, MANAGED_BY_VALUE)
             .addToLabels(TENANT_SLUG_LABEL, tenant.getSlug())
             .addToAnnotations(TENANT_ID_ANNOTATION, String.valueOf(tenant.getId()))
@@ -72,14 +96,14 @@ public class TenantDbSecretWriter {
             .build();
 
     try (KubernetesClientFactory.AuthenticatedClient session = kubernetesClientFactory.open()) {
-      session.client().resource(secret).inNamespace(namespace).serverSideApply();
+      session.client().resource(secret).inNamespace(secretNamespace).serverSideApply();
     }
 
     log.info(
         "Published database credential to secret {}/{} for tenant {}",
-        namespace,
+        secretNamespace,
         secretName,
         tenant.getId());
-    return secretName;
+    return new ProvisionedAwsSecret(secretName, secretNamespace);
   }
 }

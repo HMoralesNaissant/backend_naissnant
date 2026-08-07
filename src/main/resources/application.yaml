@@ -7,7 +7,7 @@ spring:
 
   #DATABASE CONFIGURATION
   datasource:
-    url: ${DB_URL:jdbc:postgresql://localhost:54321/${DB_NAME}?sslmode=disable&ApplicationName=tenantos-registrar-local}
+    url: ${DB_URL}
     username: ${POSTGRES_USER}
     password: ${POSTGRES_PASSWORD}
     driver-class-name: org.postgresql.Driver
@@ -46,10 +46,10 @@ spring:
 
   #MAIL
   mail:
-    host: ${SMTP_HOST:localhost}
-    port: ${SMTP_PORT:1025}
-    username: ${SMTP_USERNAME:}
-    password: ${SMTP_PASSWORD:}
+    host: ${SMTP_HOST}
+    port: ${SMTP_PORT}
+    username: ${SMTP_USERNAME}
+    password: ${SMTP_PASSWORD}
     properties:
       mail:
         smtp:
@@ -106,23 +106,23 @@ tenant:
     # The tenant-data server, deliberately not spring.datasource: tenant data and the control plane
     # belong in separate blast radii. Locally this is the tenant-postgres container on 54323.
     # The admin role needs only CREATEDB and CREATEROLE, not superuser.
-    admin-url: ${TENANT_DB_ADMIN_URL:jdbc:postgresql://localhost:54323/postgres}
-    admin-user: ${TENANT_DB_ADMIN_USER:}
-    admin-password: ${TENANT_DB_ADMIN_PASSWORD:}
+    admin-url: ${TENANT_DB_ADMIN_URL}
+    admin-user: ${TENANT_DB_ADMIN_USER}
+    admin-password: ${TENANT_DB_ADMIN_PASSWORD}
     # What gets published to the tenant - what their workloads dial, which is not necessarily how
     # the registrar reached the server above. In-cluster pods resolve a service name; the registrar
     # may come via a bastion or a different DNS name entirely.
-    host: ${TENANT_DB_HOST:localhost}
-    port: ${TENANT_DB_PORT:54323}
+    host: ${TENANT_DB_HOST}
+    port: ${TENANT_DB_PORT}
     # Per-role cap, so one tenant cannot exhaust the server's max_connections on its own.
     connection-limit: ${TENANT_DB_CONNECTION_LIMIT:20}
     secret:
       # Off locally: there are no AWS credentials here, and a hard failure would dead-letter every
       # job at this step.
-      secrets-manager-enabled: ${TENANT_DB_SECRETS_MANAGER_ENABLED:false}
-      kubernetes-enabled: ${TENANT_DB_K8S_SECRET_ENABLED:true}
-      name-prefix: ${TENANT_DB_SECRET_PREFIX:tenantos/tenant}
-      kubernetes-name: ${TENANT_DB_K8S_SECRET_NAME:tenant-db-credentials}
+      aws-secrets-manager-enabled: ${TENANT_DB_SECRETS_MANAGER_ENABLED:true}
+      kubernetes-enabled: ${TENANT_DB_K8S_SECRET_ENABLED:false}
+      name-prefix: ${TENANT_DB_SECRET_PREFIX}
+      kubernetes-name: ${TENANT_DB_K8S_SECRET_NAME}
   auth:
     # Short-lived by design: the access token cannot be revoked once signed, so its blast radius
     # is bounded by its lifetime. Revocation works through the session row the token names.
@@ -148,7 +148,7 @@ security:
     secret: ${JWT_SECRET:}
     ttl-seconds: ${JWT_TTL_SECONDS:3600}
   cors:
-    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000}
+    allowed-origins: ${CORS_ALLOWED_ORIGINS}
     allowed-methods: ${CORS_ALLOWED_METHODS:GET,POST,PUT,DELETE,OPTIONS}
     allowed-headers: ${CORS_ALLOWED_HEADERS:Authorization,Content-Type}
     max-age: ${CORS_MAX_AGE:3600}
@@ -166,10 +166,13 @@ ratelimit:
 
 #AWS SDK CONFIGURATION
 aws:
-  region: ${AWS_REGION:us-west-2}
+  region: ${AWS_REGION}
   eks:
-    cluster-name: ${EKS_CLUSTER_NAME:dev_infra_cluster}
+    cluster-name: ${EKS_CLUSTER_NAME}
+  local:
+    assume-role-arn: ${AWS_LOCAL_ASSUME_ROLE_ARN}
+    profile: ${AWS_LOCAL_PROFILE}
 
 server:
-  port: ${PORT:8085}
+  port: ${PORT}
 

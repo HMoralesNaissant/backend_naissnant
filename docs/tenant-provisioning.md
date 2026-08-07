@@ -72,7 +72,7 @@ sequenceDiagram
     W->>DB: 4 CREATE_MEMBERSHIP — owner + user_roles
     W->>DB: 5 CREATE_SUBSCRIPTION — free trial
     W->>DB: 6 CREATE_API_KEY — internal key (hash only)
-    W->>EKS: 7 CREATE_NAMESPACE — serverSideApply
+    W->>EKS: 7 CREATE_NAMESPACE — get, then create if absent
     W->>EKS: 8 CREATE_TENANT_DATABASE — CREATE DATABASE + publish credential
     W->>M: 9 SEND_CONFIRMATION
     W->>DB: status = WORKSPACE_READY
@@ -105,8 +105,8 @@ structurally rather than defensively — no step contains a "have I already run?
 `AbstractTransactionalStep`, so the `tenant_namespace` row it writes, its audit entry and the
 advance all commit together. It buys that at the cost of holding a pooled connection across the EKS
 call, which is acceptable only because the work either side of the commit is genuinely idempotent:
-`serverSideApply` re-applies an identical namespace harmlessly, and `tenant_namespace` is keyed on
-`tenant_id`, so a retry upserts rather than duplicates.
+the provisioner looks the namespace up and skips creating one that already exists, and
+`tenant_namespace` is keyed on `tenant_id`, so a retry upserts rather than duplicates.
 
 `SEND_CONFIRMATION` and `CREATE_TENANT_DATABASE` are the exceptions. Both implement
 `TenantProvisioningStep` directly and advance through `TenantWorkspaceProvisioningStore.advance()`
@@ -395,6 +395,14 @@ exists; it would buy nothing today.
 `WORKSPACE_FAILED`. Failed rows are never deleted — they are the dead-letter record, carrying
 `last_error` for diagnosis and manual replay. Because `current_step` persists, a replay resumes
 rather than restarts.
+
+**EKS authentication has a hard 15-minute ceiling.** The bearer token is a presigned STS
+`GetCallerIdentity` URL, and EKS rejects any whose `X-Amz-Expires` exceeds **900 seconds** — as a
+**401**, before it identifies the caller at all, which is indistinguishable at a glance from a
+missing access entry. `EksClusterAuthProvider` signs for 60 seconds, matching `aws eks get-token`,
+and is wired into the client as fabric8's `OAuthTokenProvider` rather than as a fixed string, so a
+token is minted per request and no client can outlive its credential. Reach for that ceiling before
+suspecting IAM when EKS calls start returning 401.
 
 **Distributed events.** The outbox row is the seam where a real broker slots in. Publishing to SQS
 or Kafka inside `register()`'s transaction would risk the classic dual-write failure — message sent,

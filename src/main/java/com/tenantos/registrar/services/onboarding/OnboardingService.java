@@ -11,7 +11,7 @@ import com.tenantos.registrar.exceptions.InvalidOtpException;
 import com.tenantos.registrar.exceptions.OtpGenerationRateLimitedException;
 import com.tenantos.registrar.repository.*;
 import com.tenantos.registrar.services.workspace.TenantWorkspaceProvisioningService;
-import com.tenantos.registrar.services.workspace.TenantWorkspaceRequestedEvent;
+import com.tenantos.registrar.services.workspace.records.TenantWorkspaceRequestedEvent;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;

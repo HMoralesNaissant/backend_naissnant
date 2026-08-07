@@ -28,9 +28,10 @@ import software.amazon.awssdk.services.eks.model.DescribeClusterRequest;
  * `aws-auth`/access-entry config is what actually authorizes this identity — this class only
  * produces the token, not the RBAC binding.
  *
- * <p>Endpoint/CA are fetched once per process and cached, since they don't change; the token is
- * never cached — it embeds a signature expiry (short-lived on purpose) and EKS also caps token
- * validity at 15 minutes server-side regardless of the signed URL's own expiry.
+ * <p>Endpoint/CA are fetched once per process and cached, since they don't change. The token is
+ * never cached: {@link #generateToken()} is handed to the Kubernetes client as a token
+ * <em>provider</em>, so one is signed afresh for every request. See {@link #TOKEN_TTL} for the
+ * server-side ceiling that makes a long-lived token impossible in the first place.
  */
 @Service
 @Slf4j
@@ -41,7 +42,18 @@ public class EksClusterAuthProvider {
   private static final String CLUSTER_ID_HEADER = "x-k8s-aws-id";
   private static final String STS_SIGNING_NAME = "sts";
   private static final String STS_GET_CALLER_IDENTITY_PATH = "/?Action=GetCallerIdentity&Version=2011-06-15";
-  private static final Duration TOKEN_TTL = Duration.ofDays(7);
+
+  /**
+   * How long the presigned URL is signed for, and <b>there is a hard ceiling of 900 seconds</b>. EKS
+   * rejects any token whose {@code X-Amz-Expires} exceeds that, and it rejects it as a 401 before it
+   * ever identifies the caller - which reads exactly like a missing access entry and is not. Measured
+   * against a live cluster: 900 returns 200, 901 returns 401.
+   *
+   * <p>60 matches what {@code aws eks get-token} emits. Nothing is gained by going higher, because a
+   * fresh token is signed per request (see {@link #generateToken()}) rather than being held for the
+   * life of a client.
+   */
+  private static final Duration TOKEN_TTL = Duration.ofSeconds(60);
 
   private final EksClient eksClient;
   private final AwsCredentialsProvider awsCredentialsProvider;
@@ -57,7 +69,7 @@ public class EksClusterAuthProvider {
       throw new IllegalStateException("aws.eks.cluster-name (EKS_CLUSTER_NAME) is not configured");
     }
     Cluster cluster = describeCluster();
-    return new EksClusterAuth(cluster.endpoint(), cluster.certificateAuthority().data(), generateToken());
+    return new EksClusterAuth(cluster.endpoint(), cluster.certificateAuthority().data());
   }
 
   /**
@@ -92,7 +104,20 @@ public class EksClusterAuthProvider {
     return cluster;
   }
 
-  private String generateToken() {
+  /**
+   * A bearer token valid for the next {@link #TOKEN_TTL}. Public because it is wired in as fabric8's
+   * {@code OAuthTokenProvider}, which calls it on every single request - so a client never carries a
+   * token older than the request it is attached to, and expiry stops being something to manage.
+   *
+   * <p>Cheap enough to call per request: presigning is HMAC arithmetic with no network round-trip,
+   * and {@code resolveCredentials()} is the AWS SDK's own per-call path, cached and refreshed by the
+   * provider chain. Deliberately not memoized - a cache would reintroduce the staleness window that
+   * signing per request exists to remove.
+   */
+  public String generateToken() {
+    if (clusterName == null || clusterName.isBlank()) {
+      throw new IllegalStateException("aws.eks.cluster-name (EKS_CLUSTER_NAME) is not configured");
+    }
     SdkHttpFullRequest request = SdkHttpFullRequest.builder()
         .method(SdkHttpMethod.GET)
         .uri(URI.create("https://sts." + awsRegion.id() + ".amazonaws.com" + STS_GET_CALLER_IDENTITY_PATH))

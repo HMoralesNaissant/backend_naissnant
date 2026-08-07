@@ -112,8 +112,7 @@ public class TenantAuthService {
     Tenant tenant =
         tenantRepository
             .findById(membership.getTenantId())
-            .orElseThrow(
-                () -> new IllegalStateException("Membership points at a missing tenant"));
+            .orElseThrow(() -> new IllegalStateException("Membership points at a missing tenant"));
 
     AuthResult result = issue(user, tenant, client, null);
 
@@ -174,8 +173,7 @@ public class TenantAuthService {
               .build());
 
       log.warn(
-          "Refresh token reuse detected for user {} - revoked all sessions",
-          presented.getUserId());
+          "Refresh token reuse detected for user {} - revoked all sessions", presented.getUserId());
       throw new AuthenticationFailedException("Invalid refresh token");
     }
 
@@ -256,8 +254,8 @@ public class TenantAuthService {
   }
 
   /**
-   * Picks the tenant to sign in to. A user with exactly one membership needs no help; more than
-   * one and the caller must name it, because guessing would silently drop someone into the wrong
+   * Picks the tenant to sign in to. A user with exactly one membership needs no help; more than one
+   * and the caller must name it, because guessing would silently drop someone into the wrong
    * tenant.
    */
   private TenantMember resolveMembership(User user, String tenantSlug, ClientContext client) {
@@ -293,8 +291,8 @@ public class TenantAuthService {
   }
 
   /**
-   * Creates (or reuses, on refresh) the session and mints a matching access/refresh token pair.
-   * The raw refresh token exists only in the returned record - the database gets its SHA-256.
+   * Creates (or reuses, on refresh) the session and mints a matching access/refresh token pair. The
+   * raw refresh token exists only in the returned record - the database gets its SHA-256.
    */
   private AuthResult issue(User user, Tenant tenant, ClientContext client, Session existing) {
     Instant now = Instant.now();

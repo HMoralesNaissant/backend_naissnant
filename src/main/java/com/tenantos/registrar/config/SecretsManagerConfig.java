@@ -18,7 +18,7 @@ import software.amazon.awssdk.services.secretsmanager.SecretsManagerClient;
  */
 @Configuration
 @ConditionalOnProperty(
-    value = "tenant.database.secret.secrets-manager-enabled",
+    value = "tenant.database.secret.aws-secrets-manager-enabled",
     havingValue = "true")
 public class SecretsManagerConfig {
 
