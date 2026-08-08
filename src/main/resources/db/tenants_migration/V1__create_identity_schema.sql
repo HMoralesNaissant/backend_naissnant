@@ -31,7 +31,7 @@ CREATE TABLE IF NOT EXISTS users
     -- for cross-referencing audit trails and support tooling. UNIQUE because the two are 1:1: two
     -- tenant-DB users pointing at the same registrar user would be a data-modelling bug, not a
     -- duplicate row.
-    registrar_user_id  UUID         NOT NULL UNIQUE,
+    registrar_user_id  UUID         ,
 
     email              VARCHAR(320) NOT NULL UNIQUE,
 

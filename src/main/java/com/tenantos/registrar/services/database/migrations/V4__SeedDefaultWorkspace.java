@@ -22,10 +22,10 @@ public class V4__SeedDefaultWorkspace extends BaseJavaMigration {
   private static final String DEFAULT_WORKSPACE_SLUG = "my-workspace";
   private static final String DEFAULT_FOLDER_NAME = "default";
 
-  private final UUID tenantId;
+  private final UUID userId;
 
-  public V4__SeedDefaultWorkspace(UUID tenantId) {
-    this.tenantId = tenantId;
+  public V4__SeedDefaultWorkspace(UUID userId) {
+    this.userId = userId;
   }
 
   @Override
@@ -34,26 +34,29 @@ public class V4__SeedDefaultWorkspace extends BaseJavaMigration {
 
     String insertWorkspace =
         """
-        INSERT INTO workspaces (id, tenant_id, name, slug)
-        VALUES (?, ?, ?, ?)
+        INSERT INTO workspaces (id, user_id, name, slug, is_default)
+        VALUES (?, ?, ?, ?, ?)
         """;
     try (PreparedStatement statement = context.getConnection().prepareStatement(insertWorkspace)) {
       statement.setObject(1, workspaceId);
-      statement.setObject(2, tenantId);
+      statement.setObject(2, userId);
       statement.setString(3, DEFAULT_WORKSPACE_NAME);
       statement.setString(4, DEFAULT_WORKSPACE_SLUG);
+      statement.setBoolean(5, true);
       statement.executeUpdate();
     }
 
     String insertFolder =
         """
-        INSERT INTO folders (id, workspace_id, name)
-        VALUES (?, ?, ?)
+        INSERT INTO folders (id, workspace_id, name, slug, is_default)
+        VALUES (?, ?, ?, ?, ?)
         """;
     try (PreparedStatement statement = context.getConnection().prepareStatement(insertFolder)) {
       statement.setObject(1, UUID.randomUUID());
       statement.setObject(2, workspaceId);
       statement.setString(3, DEFAULT_FOLDER_NAME);
+      statement.setString(4, DEFAULT_FOLDER_NAME);
+      statement.setBoolean(5, true);
       statement.executeUpdate();
     }
   }

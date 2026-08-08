@@ -7,10 +7,7 @@ CREATE TABLE workspaces
 (
     id          UUID PRIMARY KEY,
 
-    -- Not a real foreign key, same reasoning as users.registrar_user_id in V1: tenants lives in
-    -- the registrar's own database (db/migration/V3__tenant_provisioning.sql), a different Postgres
-    -- server from this per-tenant database - just a durable pointer back to it.
-    tenant_id   UUID         NOT NULL,
+    user_id     UUID         NOT NULL,
 
     name        VARCHAR(200) NOT NULL,
 
@@ -20,13 +17,15 @@ CREATE TABLE workspaces
 
     status      VARCHAR(30)  NOT NULL DEFAULT 'active',
 
+    is_default  BOOLEAN      NOT NULL DEFAULT FALSE,
+
     settings    JSONB        NOT NULL DEFAULT '{}'::jsonb,
 
     created_at  TIMESTAMPTZ  NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     updated_at  TIMESTAMPTZ  NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-    UNIQUE (tenant_id, slug)
+    UNIQUE (user_id, slug)
 );
 
 -- ============================================================================
@@ -35,27 +34,31 @@ CREATE TABLE workspaces
 
 CREATE TABLE folders
 (
-    id               UUID PRIMARY KEY,
+    id UUID PRIMARY KEY;
 
-    workspace_id     UUID         NOT NULL
+workspace_id
+UUID         NOT NULL
         REFERENCES workspaces (id)
-            ON DELETE CASCADE,
-
-    parent_folder_id UUID
-        REFERENCES folders (id)
-            ON DELETE CASCADE,
+            ON DELETE
+CASCADE,
 
     name             VARCHAR(200) NOT NULL,
+
+    slug             VARCHAR(200) NOT NULL,
 
     description      TEXT,
 
     position         INTEGER      NOT NULL DEFAULT 0,
 
+    is_default       BOOLEAN      NOT NULL DEFAULT FALSE,
+
     created_at       TIMESTAMPTZ  NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     updated_at       TIMESTAMPTZ  NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-    UNIQUE (workspace_id, parent_folder_id, name)
+    UNIQUE (workspace_id, name),
+    UNIQUE (workspace_id, slug)
+
 );
 
 -- ============================================================================
@@ -258,6 +261,10 @@ CREATE TABLE variables
         REFERENCES workspaces (id)
             ON DELETE CASCADE,
 
+    folder_id    UUID
+                              REFERENCES folders (id)
+                                  ON DELETE SET NULL,
+
     name         VARCHAR(200) NOT NULL,
 
     value        TEXT         NOT NULL,
@@ -277,6 +284,10 @@ CREATE TABLE connections
     workspace_id UUID         NOT NULL
         REFERENCES workspaces (id)
             ON DELETE CASCADE,
+
+    folder_id    UUID
+                              REFERENCES folders (id)
+                                  ON DELETE SET NULL,
 
     name         VARCHAR(200) NOT NULL,
 
@@ -405,7 +416,9 @@ CREATE TABLE schedules
 
     cron_expression VARCHAR(100),
 
-    misfire_policy  VARCHAR(30)           DEFAULT 'execute_once' interval_value  INTEGER,
+    misfire_policy  VARCHAR(30)           DEFAULT 'execute_once',
+
+    interval_value  INTEGER,
 
     interval_unit   VARCHAR(20),
 
@@ -543,8 +556,8 @@ CREATE TABLE execution_steps
 -- INDEXES
 -- ============================================================================
 
-CREATE INDEX idx_workspaces_tenant
-    ON workspaces (tenant_id);
+CREATE INDEX idx_workspaces_user
+    ON workspaces (user_id);
 
 CREATE INDEX idx_folders_workspace
     ON folders (workspace_id);
@@ -572,9 +585,6 @@ CREATE INDEX idx_edges_source
 
 CREATE INDEX idx_edges_target
     ON workflow_edges (target_node_id);
-
-CREATE INDEX idx_tags_workspace
-    ON tags (workspace_id);
 
 CREATE INDEX idx_variables_workspace
     ON variables (workspace_id);
