@@ -34,27 +34,27 @@ CREATE TABLE workspaces
 
 CREATE TABLE folders
 (
-    id UUID PRIMARY KEY;
+    id          UUID PRIMARY KEY,
 
-workspace_id
-UUID         NOT NULL
+    workspace_id
+                UUID         NOT NULL
         REFERENCES workspaces (id)
             ON DELETE
-CASCADE,
+                CASCADE,
 
-    name             VARCHAR(200) NOT NULL,
+    name        VARCHAR(200) NOT NULL,
 
-    slug             VARCHAR(200) NOT NULL,
+    slug        VARCHAR(200) NOT NULL,
 
-    description      TEXT,
+    description TEXT,
 
-    position         INTEGER      NOT NULL DEFAULT 0,
+    position    INTEGER      NOT NULL DEFAULT 0,
 
-    is_default       BOOLEAN      NOT NULL DEFAULT FALSE,
+    is_default  BOOLEAN      NOT NULL DEFAULT FALSE,
 
-    created_at       TIMESTAMPTZ  NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at  TIMESTAMPTZ  NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-    updated_at       TIMESTAMPTZ  NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at  TIMESTAMPTZ  NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     UNIQUE (workspace_id, name),
     UNIQUE (workspace_id, slug)
@@ -73,9 +73,9 @@ CREATE TABLE workflows
         REFERENCES workspaces (id)
             ON DELETE CASCADE,
 
-    folder_id          UUID
-                                    REFERENCES folders (id)
-                                        ON DELETE SET NULL,
+    folder_id          UUID         NOT NULL
+        REFERENCES folders (id)
+            ON DELETE SET NULL,
 
     name               VARCHAR(250) NOT NULL,
 
@@ -87,7 +87,9 @@ CREATE TABLE workflows
 
     active             BOOLEAN      NOT NULL DEFAULT FALSE,
 
-    current_version_id UUID,
+    current_version_id UUID
+                                    REFERENCES workflow_versions (id)
+                                        ON DELETE SET NULL,
 
     created_by         UUID,
 
@@ -99,7 +101,8 @@ CREATE TABLE workflows
 
     updated_at         TIMESTAMPTZ  NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-    UNIQUE (workspace_id, slug)
+    UNIQUE (workspace_id, folder_id, slug),
+    UNIQUE (workspace_id, folder_id, name),
 );
 
 -- ============================================================================
@@ -261,9 +264,9 @@ CREATE TABLE variables
         REFERENCES workspaces (id)
             ON DELETE CASCADE,
 
-    folder_id    UUID
-                              REFERENCES folders (id)
-                                  ON DELETE SET NULL,
+    folder_id    UUID         NOT NULL
+        REFERENCES folders (id)
+            ON DELETE SET NULL,
 
     name         VARCHAR(200) NOT NULL,
 
@@ -271,7 +274,11 @@ CREATE TABLE variables
 
     encrypted    BOOLEAN      NOT NULL DEFAULT FALSE,
 
-    UNIQUE (workspace_id, name)
+    created_at   TIMESTAMPTZ  NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    updated_at   TIMESTAMPTZ  NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    UNIQUE (workspace_id, folder_id, name)
 );
 
 -- ============================================================================
@@ -307,7 +314,7 @@ CREATE TABLE connections
 
     updated_at   TIMESTAMPTZ  NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-    UNIQUE (workspace_id, name)
+    UNIQUE (workspace_id, folder_id, name)
 );
 
 CREATE TABLE workflow_node_connections

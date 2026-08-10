@@ -54,7 +54,7 @@ public class OnboardingRestController {
               + "authenticates every /onboarding/** call for the rest of the funnel (create, "
               + "validate, register). CSRF protection is disabled for this service; the cookie "
               + "itself is the auth mechanism.")
-  @GetMapping("/token")
+  @GetMapping({"/token", "/"})
   public ResponseEntity<?> issueToken(HttpServletRequest request, HttpServletResponse response) {
     Map<String, Object> userClientDetails = this.getUserClientDetails(request);
     String rawToken = onboardingOnFlightTokenService.issue(userClientDetails);
@@ -111,7 +111,7 @@ public class OnboardingRestController {
           @Content(
               mediaType = "application/json",
               schema = @Schema(implementation = OnboardingRequest.class)))
-  @PostMapping
+  @PostMapping({"", "/"})
   public ResponseEntity<?> onboardUser(@Valid @RequestBody OnboardingRequest request) {
     Onboarding entity =
         Onboarding.builder()
@@ -269,8 +269,7 @@ public class OnboardingRestController {
     @ApiResponse(
         responseCode = "200",
         description = "Current provisioning state",
-        content =
-            @Content(schema = @Schema(implementation = WorkspaceStatusResponse.class))),
+        content = @Content(schema = @Schema(implementation = WorkspaceStatusResponse.class))),
     @ApiResponse(responseCode = "404", description = "Unknown provisioningId", content = @Content)
   })
   @GetMapping("/workspace-status/{provisioningId}")

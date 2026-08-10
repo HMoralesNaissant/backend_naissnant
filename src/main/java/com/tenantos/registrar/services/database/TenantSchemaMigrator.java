@@ -35,7 +35,7 @@ public class TenantSchemaMigrator {
             .dataSource(provisioned.jdbcUrl(), provisioned.roleName(), provisioned.password())
             .locations(MIGRATIONS_LOCATION)
             .javaMigrations(
-                new V2__SeedRegistrationUser(user), new V4__SeedDefaultWorkspace(tenant.getId()))
+                new V2__SeedRegistrationUser(user), new V4__SeedDefaultWorkspace(user, tenant))
             .load();
 
     flyway.migrate();

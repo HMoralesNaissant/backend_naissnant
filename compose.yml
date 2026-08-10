@@ -1,5 +1,5 @@
 services:
-  postgres:
+  registrar-db-server:
     image: postgres:16-alpine
     container_name: tenantos-registrar-postgres
     restart: unless-stopped
@@ -10,7 +10,7 @@ services:
     ports:
       - "54321:5432"
     volumes:
-      - ../tenantos-registrar-pg-data:/var/lib/postgresql/data
+      - ../db/tenantos-registrar-pg-data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${DB_NAME}"]
 
@@ -23,7 +23,7 @@ services:
   # Tenant data lives on its own server, never the registrar's. Separate blast radius: a runaway
   # tenant query, a restore, or a version upgrade on this one must not touch the control plane.
   # Locally that is a second container; in production a separate RDS/Aurora cluster.
-  tenant-postgres:
+  tenants-db-server:
     image: postgres:16-alpine
     container_name: tenantos-tenant-data-postgres
     restart: unless-stopped
@@ -40,7 +40,7 @@ services:
       # service in the same multi-tenant project.
       - "54323:5432"
     volumes:
-      - ../tenantos-tenant-data-pg-data:/var/lib/postgresql/data
+      - ../db/tenantos-tenant-data-pg-data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${TENANT_DB_ADMIN_USER}"]
       interval: 10s

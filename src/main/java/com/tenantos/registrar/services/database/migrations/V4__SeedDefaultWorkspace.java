@@ -1,5 +1,7 @@
 package com.tenantos.registrar.services.database.migrations;
 
+import com.tenantos.registrar.entity.Tenant;
+import com.tenantos.registrar.entity.User;
 import org.flywaydb.core.api.migration.BaseJavaMigration;
 import org.flywaydb.core.api.migration.Context;
 
@@ -22,10 +24,12 @@ public class V4__SeedDefaultWorkspace extends BaseJavaMigration {
   private static final String DEFAULT_WORKSPACE_SLUG = "my-workspace";
   private static final String DEFAULT_FOLDER_NAME = "default";
 
-  private final UUID userId;
+private final User user;
+private final Tenant tenant;
 
-  public V4__SeedDefaultWorkspace(UUID userId) {
-    this.userId = userId;
+  public V4__SeedDefaultWorkspace(User user, Tenant tenant) {
+    this.user = user;
+    this.tenant = tenant;
   }
 
   @Override
@@ -39,7 +43,7 @@ public class V4__SeedDefaultWorkspace extends BaseJavaMigration {
         """;
     try (PreparedStatement statement = context.getConnection().prepareStatement(insertWorkspace)) {
       statement.setObject(1, workspaceId);
-      statement.setObject(2, userId);
+      statement.setObject(2, user.getId());
       statement.setString(3, DEFAULT_WORKSPACE_NAME);
       statement.setString(4, DEFAULT_WORKSPACE_SLUG);
       statement.setBoolean(5, true);
