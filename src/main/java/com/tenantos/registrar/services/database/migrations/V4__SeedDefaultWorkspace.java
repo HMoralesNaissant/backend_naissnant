@@ -6,6 +6,7 @@ import org.flywaydb.core.api.migration.BaseJavaMigration;
 import org.flywaydb.core.api.migration.Context;
 
 import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.util.UUID;
 
 /**
@@ -24,8 +25,8 @@ public class V4__SeedDefaultWorkspace extends BaseJavaMigration {
   private static final String DEFAULT_WORKSPACE_SLUG = "my-workspace";
   private static final String DEFAULT_FOLDER_NAME = "default";
 
-private final User user;
-private final Tenant tenant;
+  private final User user;
+  private final Tenant tenant;
 
   public V4__SeedDefaultWorkspace(User user, Tenant tenant) {
     this.user = user;
@@ -34,6 +35,7 @@ private final Tenant tenant;
 
   @Override
   public void migrate(Context context) throws Exception {
+    UUID tenantUserId = findTenantUserId(context);
     UUID workspaceId = UUID.randomUUID();
 
     String insertWorkspace =
@@ -43,7 +45,7 @@ private final Tenant tenant;
         """;
     try (PreparedStatement statement = context.getConnection().prepareStatement(insertWorkspace)) {
       statement.setObject(1, workspaceId);
-      statement.setObject(2, user.getId());
+      statement.setObject(2, tenantUserId);
       statement.setString(3, DEFAULT_WORKSPACE_NAME);
       statement.setString(4, DEFAULT_WORKSPACE_SLUG);
       statement.setBoolean(5, true);
@@ -62,6 +64,25 @@ private final Tenant tenant;
       statement.setString(4, DEFAULT_FOLDER_NAME);
       statement.setBoolean(5, true);
       statement.executeUpdate();
+    }
+  }
+
+  /**
+   * {@code workspaces.user_id} refers to this database's own {@code users.id}, which V1 generates
+   * - not the registrar's {@code user.getId()}, which V2 stored in {@code registrar_user_id}. The
+   * two are different UUIDs, so the row V2 just inserted is looked up by that pointer.
+   */
+  private UUID findTenantUserId(Context context) throws Exception {
+    String sql = "SELECT id FROM users WHERE registrar_user_id = ?";
+    try (PreparedStatement statement = context.getConnection().prepareStatement(sql)) {
+      statement.setObject(1, user.getId());
+      try (ResultSet resultSet = statement.executeQuery()) {
+        if (!resultSet.next()) {
+          throw new IllegalStateException(
+              "No users row with registrar_user_id " + user.getId() + " - V2 did not seed it");
+        }
+        return resultSet.getObject("id", UUID.class);
+      }
     }
   }
 }
