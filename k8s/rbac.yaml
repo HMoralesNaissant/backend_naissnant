@@ -1,0 +1,67 @@
+# RBAC for the registrar's own ServiceAccount. Not part of the skaffolder `nodejs` schema, so it is
+# applied by hand, once per environment:
+#
+#   kubectl apply -f k8s/rbac.yaml
+#
+# The ServiceAccount itself (tenantos-registrar, in tenant-apps-<env>) is created by the deploy.
+# Change `namespace` below for qa/prod.
+#
+# What the code needs, and why:
+#   NamespaceProvisioner  - get + create `namespaces` (cluster-scoped; there is no namespaced form)
+#   TenantSecretWriter    - serverSideApply a Secret into each tenant namespace, which is a PATCH
+#                           (and a create the first time), plus a get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: tenantos-registrar-namespaces
+rules:
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "create"]
+---
+# Secrets cannot be scoped to "namespaces carrying the managed-by label" or a name prefix, and the
+# tenant namespaces do not exist yet when this is applied, so a per-namespace Role is not possible.
+# This grants write access to Secrets cluster-wide. It is deliberately NOT given list/watch/delete,
+# but `get` still allows reading any Secret whose name is known. Tighten with `resourceNames`
+# (the secret name is the fixed tenant.database.secret.kubernetes-name) - that limits it to that
+# one name in every namespace, which is the closest the API allows.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: tenantos-registrar-tenant-secrets
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["tenant-db-credentials"]
+    verbs: ["get", "patch"]
+  # `create` cannot be restricted by resourceNames (the name is not known at authorisation time).
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: tenantos-registrar-namespaces
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: tenantos-registrar-namespaces
+subjects:
+  - kind: ServiceAccount
+    name: tenantos-registrar
+    namespace: tenant-apps-dev
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: tenantos-registrar-tenant-secrets
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: tenantos-registrar-tenant-secrets
+subjects:
+  - kind: ServiceAccount
+    name: tenantos-registrar
+    namespace: tenant-apps-dev

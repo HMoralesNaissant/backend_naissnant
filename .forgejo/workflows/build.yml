@@ -138,6 +138,15 @@ jobs:
           echo "REPO_COMMIT_REF=https://${REGISTRY}/${GITHUB_REPOSITORY}/commit/${COMMIT_SHA}" >> "$GITHUB_ENV"
           echo "APP_IMAGE=${IMAGE_REF}" >> "$GITHUB_ENV"
 
+      # COMMIT_SHA (set above) is the commit the image was built from, not the dispatched ref, so the
+      # RBAC shipped matches the image being deployed.
+      - name: Checkout k8s manifests
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.COMMIT_SHA }}
+          sparse-checkout: k8s
+          path: source
+
       - name: Configure Forgejo npm registry
         env:
           SKAFFOLDER_FORGEJO_TOKEN: ${{ secrets.SKAFFOLDER_FORGEJO_TOKEN }}
@@ -191,7 +200,7 @@ jobs:
             echo "::error::MANIFEST_ENCRYPTION_KEY secret is not set"
             exit 1
           fi
-          tar czf - -C output manifest.yaml skaffold.yaml \
+          tar czf - -C output manifest.yaml skaffold.yaml -C "${GITHUB_WORKSPACE}/source" k8s \
             | openssl enc -aes-256-cbc -pbkdf2 -salt -pass env:MANIFEST_ENCRYPTION_KEY \
             -out bundle.enc
 
@@ -224,7 +233,7 @@ jobs:
           openssl enc -d -aes-256-cbc -pbkdf2 -pass env:MANIFEST_ENCRYPTION_KEY -in bundle.enc \
             | tar xzf -
           rm bundle.enc
-          ls manifest.yaml skaffold.yaml
+          ls manifest.yaml skaffold.yaml k8s/rbac.yaml
 
       - name: Install skaffold
         run: |
@@ -270,3 +279,15 @@ jobs:
           set -euo pipefail
           skaffold apply --kubeconfig="$HOME/.kube/config" \
             --profile="${DEPLOY_ENV}" --namespace ${{env.KUBE_NAMESPACE}} --filename=skaffold.yaml manifest.yaml
+
+      # Not part of the skaffolder schema, so it is applied here. `kubectl apply` is idempotent: after
+      # the first run it is a no-op unless k8s/rbac.yaml changed, so it needs no "already done" guard.
+      # The kubeconfig user must be allowed to create ClusterRoles/Bindings (and, because Kubernetes
+      # blocks privilege escalation, to hold every permission it grants).
+      - name: Apply registrar RBAC
+        run: |
+          set -euo pipefail
+          ls
+          # The manifest binds to tenant-apps-dev; point it at this environment's namespace.
+          sed "s/namespace: tenant-apps-dev/namespace: ${KUBE_NAMESPACE}/" k8s/rbac.yaml \
+            | kubectl --kubeconfig="$HOME/.kube/config" apply -f -
