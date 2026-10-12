@@ -1,0 +1,272 @@
+name: Build and Deploy
+
+# Pushes build the image and push it to the Forgejo registry; Kargo then picks up
+# the new tag and promotes it dev -> qa -> prod by dispatching this workflow with
+# `env` and `image`, which runs only the deploy job.
+on:
+  push:
+    # Only main: every pushed SHA tag is picked up by the Kargo Warehouse and
+    # auto-promoted to dev, so feature branches must not publish one.
+    branches:
+      - main
+    tags:
+      - "v*"
+  # Kargo promotions dispatch this with `env` + `image`: deploy only, no build.
+  # Dispatching without `image` just builds.
+  workflow_dispatch:
+    inputs:
+      env:
+        description: Environment to deploy to (dev, qa, prod)
+        required: false
+        default: dev
+      image:
+        description: Full image ref to deploy (skips the build)
+        required: false
+        default: ""
+
+env:
+  # --- Registry / image -------------------------------------------------------
+  PROJECT_NAME: tenantos-registrar
+  PROJECT_SCHEMA: java21
+  REGISTRY: ${{vars.REGISTRY_HOST_NAME}}
+  # `env` context is unavailable in workflow-level env, so the name is literal.
+  IMAGE_NAME: homelab/tenantos-registrar
+  JDK_VERSION: "21-jdk-alpine"
+  JRE_VERSION: "21-jre-alpine"
+  ACTIONS_TOKEN: ${{ secrets.ACTIONS_TOKEN }}
+  
+  # Repo holding skaffolder's schemas/ (manifest templates) and configs/ (per-project values).
+  CONFIGS_REPO: Homelab/skaffolder-configs.git
+  # Host Forgejo advertises for its npm packages (differs from REGISTRY).
+  NPM_REGISTRY_HOST: ${{ vars.NPM_REGISTRY_HOST }}
+
+  # --- Kubernetes --------------------------------------------------------------
+  DEPLOY_ENV: ${{ inputs.env || 'dev' }}
+  KUBE_NAMESPACE: tenant-apps-${{ env.DEPLOY_ENV }}
+
+  #Infisical
+  INFISICAL_API_URL: ${{ vars.INFISICAL_API_URL }}
+  INFISICAL_CLIENT_ID: ${{ secrets.INFISICAL_CLIENT_ID }}
+  INFISICAL_CLIENT_SECRET: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+  INFISICAL_PROJECT_ID: ${{ secrets.INFISICAL_PROJECT_ID }}
+
+jobs:
+  build-and-push:
+    name: Build and push image
+    if: ${{ inputs.image == '' }}
+    runs-on: ubuntu-latest
+    outputs:
+      image-tag: ${{ steps.meta.outputs.image-tag }}
+      image-ref: ${{ steps.meta.outputs.image-ref }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Compute image tags
+        id: meta
+        run: |
+          set -euo pipefail
+          # <UTC timestamp>-<sha12>: sortable, so the Kargo Warehouse (Lexical) can
+          # tell which build is newest. Plain SHA tags have no order, and CI-only
+          # commits rebuild an identical image, so NewestBuild can't tell either.
+          SHA_TAG="$(date -u +%Y%m%dT%H%M%S)-${GITHUB_SHA::12}"
+          IMAGE="${REGISTRY}/${IMAGE_NAME}"
+
+          TAGS="${IMAGE}:${SHA_TAG}"
+          if [ "${GITHUB_REF}" = "refs/heads/main" ]; then
+            TAGS="${TAGS},${IMAGE}:latest"
+          fi
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            TAGS="${TAGS},${IMAGE}:${GITHUB_REF#refs/tags/}"
+          fi
+
+          echo "image-tag=${SHA_TAG}" >> "$GITHUB_OUTPUT"
+          echo "image-ref=${IMAGE}:${SHA_TAG}" >> "$GITHUB_OUTPUT"
+          echo "tags=${TAGS}" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to ${{ env.REGISTRY }}
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.REGISTRY_USERNAME }}
+          password: ${{ secrets.REGISTRY_PASSWORD }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          build-args: |
+            JDK_VERSION=${{ env.JDK_VERSION }}
+            JRE_VERSION=${{ env.JRE_VERSION }}
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache
+          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache,mode=max
+
+  manifests:
+    name: Generate manifests
+    needs: build-and-push
+    # Only Kargo-style dispatches deploy; build-and-push is skipped then, hence always().
+    if: ${{ always() && github.event_name == 'workflow_dispatch' && inputs.image != '' }}
+    runs-on: ubuntu-latest
+    steps:
+      # Must live in this job: `needs.*` only resolves here, and GITHUB_ENV is
+      # scoped to the job that writes it.
+      - name: Set build vars
+        env:
+          IMAGE_REF: ${{ inputs.image || needs.build-and-push.outputs.image-ref }}
+        run: |
+          set -euo pipefail
+          if [ -z "${IMAGE_REF}" ]; then
+            echo "::error::build-and-push produced an empty image-ref"
+            exit 1
+          fi
+          echo "BRANCH_NAME=${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}" >> "$GITHUB_ENV"
+          echo "REPO_NAME=${GITHUB_REPOSITORY#*/}" >> "$GITHUB_ENV"
+
+          # The image tag is <timestamp>-<12-char commit SHA>; the SHA is the commit it was built from, which is
+          # not necessarily the ref this run was dispatched on.
+          IMAGE_TAG="${IMAGE_REF##*:}"
+          COMMIT_SHA="${IMAGE_TAG##*-}"
+          echo "COMMIT_SHA=${COMMIT_SHA}" >> "$GITHUB_ENV"
+          echo "SHORT_SHA=${COMMIT_SHA::7}" >> "$GITHUB_ENV"
+          # Link to the commit the image was built from (not the dispatched ref).
+          echo "REPO_COMMIT_REF=https://${REGISTRY}/${GITHUB_REPOSITORY}/commit/${COMMIT_SHA}" >> "$GITHUB_ENV"
+          echo "APP_IMAGE=${IMAGE_REF}" >> "$GITHUB_ENV"
+
+      - name: Configure Forgejo npm registry
+        env:
+          SKAFFOLDER_FORGEJO_TOKEN: ${{ secrets.SKAFFOLDER_FORGEJO_TOKEN }}
+        run: |
+          set -euo pipefail
+          npm config set @homelab:registry "https://${NPM_REGISTRY_HOST}/api/packages/Homelab/npm/"
+          npm config set "//${NPM_REGISTRY_HOST}/api/packages/Homelab/npm/:_authToken" "${SKAFFOLDER_FORGEJO_TOKEN}"
+
+      - name: Install skaffolder
+        run: npm install -g @homelab/skaffolder
+
+      # The package ships only the CLI; templates and configs come from CONFIGS_REPO.
+      - name: Checkout skaffolder configs
+        run: |
+          set -euo pipefail
+          rm -rf skaffolder-configs
+          git clone --depth 1 \
+            "https://x-access-token:${{ env.ACTIONS_TOKEN }}@${{env.REGISTRY}}/${{ env.CONFIGS_REPO }}" \
+            skaffolder-configs
+
+      - name: Generate skaffold manifests
+        run: |
+          set -euo pipefail
+          skaffolder init --name ${{env.PROJECT_NAME}} --env ${{ env.DEPLOY_ENV }} --schema ${{env.PROJECT_SCHEMA}} \
+            --schemas-dir skaffolder-configs/schemas \
+            --configs-dir skaffolder-configs/configs \
+            --output-dir output \
+            --v
+          ls ./output ./output/manifests
+
+      - name: Install skaffold
+        run: |
+          set -euo pipefail
+          curl -Lo skaffold https://storage.googleapis.com/skaffold/releases/latest/skaffold-linux-amd64
+          sudo install skaffold /usr/local/bin/
+          skaffold version
+
+      - name: Render manifest with skaffold
+        run: |
+          set -euo pipefail
+          skaffold render --offline --profile="${DEPLOY_ENV}" --namespace ${{env.KUBE_NAMESPACE}} --output output/manifest.yaml --filename=output/skaffold.yaml
+
+      # manifest.yaml embeds the secrets skaffolder pulled from Infisical as plain
+      # env values. Artifacts are readable by anyone with repo access, so encrypt.
+      - name: Encrypt rendered bundle
+        env:
+          MANIFEST_ENCRYPTION_KEY: ${{ secrets.MANIFEST_ENCRYPTION_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${MANIFEST_ENCRYPTION_KEY}" ]; then
+            echo "::error::MANIFEST_ENCRYPTION_KEY secret is not set"
+            exit 1
+          fi
+          tar czf - -C output manifest.yaml skaffold.yaml \
+            | openssl enc -aes-256-cbc -pbkdf2 -salt -pass env:MANIFEST_ENCRYPTION_KEY \
+            -out bundle.enc
+
+      - name: Upload rendered bundle
+        uses: actions/upload-artifact@v3
+        with:
+          name: rendered-bundle
+          path: bundle.enc
+          retention-days: 1
+
+  deploy:
+    name: Deploy to Kubernetes
+    needs: manifests
+    runs-on: ubuntu-latest
+    # Two promotions to the same env must not apply at the same time.
+    concurrency:
+      group: deploy-${{ inputs.env || 'dev' }}
+      cancel-in-progress: false
+    steps:
+      - name: Download rendered bundle
+        uses: actions/download-artifact@v3
+        with:
+          name: rendered-bundle
+
+      - name: Decrypt rendered bundle
+        env:
+          MANIFEST_ENCRYPTION_KEY: ${{ secrets.MANIFEST_ENCRYPTION_KEY }}
+        run: |
+          set -euo pipefail
+          openssl enc -d -aes-256-cbc -pbkdf2 -pass env:MANIFEST_ENCRYPTION_KEY -in bundle.enc \
+            | tar xzf -
+          rm bundle.enc
+          ls manifest.yaml skaffold.yaml
+
+      - name: Install skaffold
+        run: |
+          set -euo pipefail
+          curl -Lo skaffold https://storage.googleapis.com/skaffold/releases/latest/skaffold-linux-amd64
+          sudo install skaffold /usr/local/bin/
+          skaffold version
+
+      - name: Set up kubectl
+        run: |
+          set -euo pipefail
+          KUBECTL_VERSION="$(curl -fsSL https://dl.k8s.io/release/stable.txt)"
+          mkdir -p "${RUNNER_TEMP}/bin"
+          curl -fsSL -o "${RUNNER_TEMP}/bin/kubectl" \
+            "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
+          chmod +x "${RUNNER_TEMP}/bin/kubectl"
+          echo "${RUNNER_TEMP}/bin" >> "$GITHUB_PATH"
+          "${RUNNER_TEMP}/bin/kubectl" version --client
+
+      - name: Configure kubeconfig
+        env:
+          KUBECONFIG_B64: ${{ secrets.KUBECONFIG_B64 }}
+        run: |
+          set -euo pipefail
+          # Kargo marks the promotion done once the dispatch is accepted, so a
+          # skipped deploy would look like a success. Fail instead.
+          if [ -z "${KUBECONFIG_B64}" ]; then
+            echo "::error::KUBECONFIG_B64 secret is not set"
+            exit 1
+          fi
+          mkdir -p "$HOME/.kube"
+          B64="$(printf '%s' "${KUBECONFIG_B64}" | tr -d ' \t\r\n')"
+          MOD=$(( ${#B64} % 4 ))
+          if [ "$MOD" -ne 0 ]; then
+            B64="${B64}$(printf '=%.0s' $(seq 1 $((4 - MOD))))"
+          fi
+          printf '%s' "$B64" | base64 -d --ignore-garbage > "$HOME/.kube/config"
+          chmod 600 "$HOME/.kube/config"
+
+      # No migration step: Flyway runs via the `migration` Spring profile, not from the pipeline.
+      - name: Apply manifest with skaffold
+        run: |
+          set -euo pipefail
+          skaffold apply --kubeconfig="$HOME/.kube/config" \
+            --profile="${DEPLOY_ENV}" --namespace ${{env.KUBE_NAMESPACE}} --filename=skaffold.yaml manifest.yaml
