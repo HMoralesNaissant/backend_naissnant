@@ -139,13 +139,21 @@ jobs:
           echo "APP_IMAGE=${IMAGE_REF}" >> "$GITHUB_ENV"
 
       # COMMIT_SHA (set above) is the commit the image was built from, not the dispatched ref, so the
-      # RBAC shipped matches the image being deployed.
+      # RBAC shipped matches the image being deployed. It is only the 12-char prefix from the image
+      # tag, and actions/checkout treats `ref` as a branch/tag name (a short SHA matches nothing), so
+      # fetch history (cheap: sparse + blob-less) and let git resolve the prefix.
       - name: Checkout k8s manifests
         uses: actions/checkout@v4
         with:
-          ref: ${{ env.COMMIT_SHA }}
+          fetch-depth: 0
           sparse-checkout: k8s
           path: source
+
+      - name: Pin k8s manifests to the image's commit
+        run: |
+          set -euo pipefail
+          git -C source checkout --detach "${COMMIT_SHA}"
+          ls source/k8s
 
       - name: Configure Forgejo npm registry
         env:
