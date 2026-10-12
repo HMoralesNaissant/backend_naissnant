@@ -18,8 +18,8 @@ import java.util.regex.Pattern;
 /**
  * Creates a tenant's Postgres database and login role on the tenant-data server.
  *
- * <p>Not under {@code services/aws}: this is plain Postgres, and the same statements work against
- * RDS, Aurora, or the local container. The server it targets is configured separately from
+ * <p>Not under {@code services/kubernetes}: this is plain Postgres, and the same statements work
+ * against any Postgres server, managed or self-hosted. The server it targets is configured separately from
  * {@code spring.datasource} on purpose - tenant data and the control plane belong in different
  * blast radii.
  *
@@ -128,7 +128,7 @@ public class TenantDatabaseProvisioner {
   /**
    * The database name a tenant's slug maps to. Public so a caller can derive it without connecting,
    * and so this stays the single definition of the rule - the same reasoning as
-   * {@code EksNamespaceProvisioner.namespaceNameFor}.
+   * {@code NamespaceProvisioner.namespaceNameFor}.
    *
    * <p>Hyphens become underscores: a slug is a valid DNS label and may contain hyphens, but a
    * Postgres identifier containing one has to be double-quoted at every single use site. Trading

@@ -1,633 +1,441 @@
 -- V3__create_workflow_resource.sql
-
--- ============================================================================
--- WORKSPACES
--- ============================================================================
-CREATE TABLE workspaces
+create table connection_types
 (
-    id          UUID PRIMARY KEY,
-
-    user_id     UUID         NOT NULL,
-
-    name        VARCHAR(200) NOT NULL,
-
-    slug        VARCHAR(100) NOT NULL,
-
-    description TEXT,
-
-    status      VARCHAR(30)  NOT NULL DEFAULT 'active',
-
-    is_default  BOOLEAN      NOT NULL DEFAULT FALSE,
-
-    settings    JSONB        NOT NULL DEFAULT '{}'::jsonb,
-
-    created_at  TIMESTAMPTZ  NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-    updated_at  TIMESTAMPTZ  NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-    UNIQUE (user_id, slug)
+    id         uuid                                               not null
+        primary key,
+    type       varchar(100)                                       not null
+        unique,
+    provider   varchar(100)                                       not null,
+    schema     jsonb                                              not null,
+    created_at timestamp with time zone default CURRENT_TIMESTAMP not null,
+    name       varchar(200)                                       not null
 );
 
--- ============================================================================
--- FOLDERS
--- ============================================================================
-
-CREATE TABLE folders
+create table node_types
 (
-    id          UUID PRIMARY KEY,
-
-    workspace_id
-                UUID         NOT NULL
-        REFERENCES workspaces (id)
-            ON DELETE
-                CASCADE,
-
-    name        VARCHAR(200) NOT NULL,
-
-    slug        VARCHAR(200) NOT NULL,
-
-    description TEXT,
-
-    position    INTEGER      NOT NULL DEFAULT 0,
-
-    is_default  BOOLEAN      NOT NULL DEFAULT FALSE,
-
-    created_at  TIMESTAMPTZ  NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-    updated_at  TIMESTAMPTZ  NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-    UNIQUE (workspace_id, name),
-    UNIQUE (workspace_id, slug)
-
+    id           uuid                     default gen_random_uuid() not null
+        constraint node_types_pk
+            primary key,
+    name         varchar(100)                                       not null,
+    display_name varchar(200)                                       not null,
+    version      integer                  default 1                 not null,
+    description  varchar(200),
+    inputs       jsonb                    default '[]'::jsonb,
+    outputs      jsonb                    default '[]'::jsonb       not null,
+    credentials  jsonb                    default '[]'::jsonb       not null,
+    properties   jsonb                    default '[]'::jsonb       not null,
+    icon         jsonb                    default '{}'::jsonb       not null,
+    category     jsonb                    default '[]'::jsonb       not null,
+    metadata     jsonb                    default '{}'::jsonb       not null,
+    created_at   timestamp with time zone default CURRENT_TIMESTAMP not null,
+    updated_at   timestamp with time zone default CURRENT_TIMESTAMP not null,
+    enabled      boolean                  default false             not null
 );
 
--- ============================================================================
--- WORKFLOWS
--- ============================================================================
+comment on table node_types is 'Node Types';
 
-CREATE TABLE workflows
+create table workflow_versions
 (
-    id                 UUID PRIMARY KEY,
-
-    workspace_id       UUID         NOT NULL
-        REFERENCES workspaces (id)
-            ON DELETE CASCADE,
-
-    folder_id          UUID         NOT NULL
-        REFERENCES folders (id)
-            ON DELETE SET NULL,
-
-    name               VARCHAR(250) NOT NULL,
-
-    slug               VARCHAR(150) NOT NULL,
-
-    description        TEXT,
-
-    status             VARCHAR(30)  NOT NULL DEFAULT 'draft',
-
-    active             BOOLEAN      NOT NULL DEFAULT FALSE,
-
-    current_version_id UUID
-                                    REFERENCES workflow_versions (id)
-                                        ON DELETE SET NULL,
-
-    created_by         UUID,
-
-    settings           JSONB        NOT NULL DEFAULT '{}'::jsonb,
-
-    metadata           JSONB        NOT NULL DEFAULT '{}'::jsonb,
-
-    created_at         TIMESTAMPTZ  NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-    updated_at         TIMESTAMPTZ  NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-    UNIQUE (workspace_id, folder_id, slug),
-    UNIQUE (workspace_id, folder_id, name),
+    id             uuid                                                        not null
+        primary key,
+    workflow_id    uuid                                                        not null,
+    version        integer                                                     not null,
+    status         varchar(30)              default 'draft'::character varying not null,
+    workflow_json  jsonb                    default '{}'::jsonb                not null,
+    change_summary text,
+    created_by     uuid,
+    published_at   timestamp with time zone,
+    created_at     timestamp with time zone default CURRENT_TIMESTAMP          not null,
+    unique (workflow_id, version)
 );
 
--- ============================================================================
--- WORKFLOW VERSIONS
--- ============================================================================
-
-CREATE TABLE workflow_versions
+create table workflow_nodes
 (
-    id             UUID PRIMARY KEY,
-
-    workflow_id    UUID        NOT NULL
-        REFERENCES workflows (id)
-            ON DELETE CASCADE,
-
-    version        INTEGER     NOT NULL,
-
-    status         VARCHAR(30) NOT NULL DEFAULT 'draft',
-
-    workflow_json  JSONB       NOT NULL DEFAULT '{}'::jsonb,
-
-    change_summary TEXT,
-
-    created_by     UUID,
-
-    published_at   TIMESTAMPTZ,
-
-    created_at     TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-    UNIQUE (workflow_id, version)
+    id                  uuid                                               not null
+        primary key,
+    workflow_version_id uuid                                               not null
+        references workflow_versions
+            on delete cascade,
+    node_key            varchar(100)                                       not null,
+    type                varchar(100)                                       not null,
+    name                varchar(200)                                       not null,
+    description         text,
+    position_x          integer                  default 0                 not null,
+    position_y          integer                  default 0                 not null,
+    width               integer,
+    height              integer,
+    enabled             boolean                  default true              not null,
+    config              jsonb                    default '{}'::jsonb       not null,
+    metadata            jsonb                    default '{}'::jsonb       not null,
+    created_at          timestamp with time zone default CURRENT_TIMESTAMP not null,
+    updated_at          timestamp with time zone default CURRENT_TIMESTAMP not null,
+    unique (workflow_version_id, node_key)
 );
 
--- ============================================================================
--- WORKFLOW NODES
--- ============================================================================
-
-CREATE TABLE workflow_nodes
+create table workflow_edges
 (
-    id                  UUID PRIMARY KEY,
-
-    workflow_version_id UUID         NOT NULL
-        REFERENCES workflow_versions (id)
-            ON DELETE CASCADE,
-
-    node_key            VARCHAR(100) NOT NULL,
-
-    type                VARCHAR(100) NOT NULL,
-
-    name                VARCHAR(200) NOT NULL,
-
-    description         TEXT,
-
-    -- UI canvas position
-    position_x          INTEGER      NOT NULL DEFAULT 0,
-    position_y          INTEGER      NOT NULL DEFAULT 0,
-
-    -- UI dimensions
-    width               INTEGER,
-    height              INTEGER,
-
-    -- Node lifecycle
-    enabled             BOOLEAN      NOT NULL DEFAULT TRUE,
-
-    -- Node-specific configuration
-    config              JSONB        NOT NULL DEFAULT '{}'::jsonb,
-
-    -- Optional metadata
-    metadata            JSONB        NOT NULL DEFAULT '{}'::jsonb,
-
-    created_at          TIMESTAMPTZ  NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-    updated_at          TIMESTAMPTZ  NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-    UNIQUE (workflow_version_id, node_key)
+    id                  uuid                                              not null
+        primary key,
+    workflow_version_id uuid                                              not null
+        references workflow_versions
+            on delete cascade,
+    source_node_id      uuid                                              not null
+        references workflow_nodes
+            on delete cascade,
+    target_node_id      uuid                                              not null
+        references workflow_nodes
+            on delete cascade,
+    source_port         varchar(100) default 'output'::character varying  not null,
+    target_port         varchar(100) default 'input'::character varying   not null,
+    edge_type           varchar(50)  default 'success'::character varying not null,
+    label               varchar(200),
+    config              jsonb        default '{}'::jsonb                  not null,
+    created_at          timestamp    default CURRENT_TIMESTAMP            not null,
+    constraint workflow_edges_check
+        check (source_node_id <> target_node_id)
 );
 
--- ============================================================================
--- WORKFLOW NODE SETTINGS
--- ============================================================================
+create index idx_edges_source
+    on workflow_edges (source_node_id);
 
-CREATE TABLE workflow_node_settings
+create index idx_edges_target
+    on workflow_edges (target_node_id);
+
+create index idx_edges_version
+    on workflow_edges (workflow_version_id);
+
+create table workflow_node_settings
 (
-    id                  UUID PRIMARY KEY,
-
-    node_id             UUID        NOT NULL UNIQUE
-        REFERENCES workflow_nodes (id)
-            ON DELETE CASCADE,
-
-    timeout_ms          INTEGER,
-
-    retry_enabled       BOOLEAN     NOT NULL DEFAULT FALSE,
-
-    retry_count         INTEGER     NOT NULL DEFAULT 0,
-
-    retry_delay_ms      INTEGER     NOT NULL DEFAULT 1000,
-
-    retry_strategy      VARCHAR(50) NOT NULL DEFAULT 'fixed',
-
-    continue_on_error   BOOLEAN     NOT NULL DEFAULT FALSE,
-
-    always_execute      BOOLEAN     NOT NULL DEFAULT FALSE,
-
-    execution_condition TEXT,
-
-    concurrency_limit   INTEGER,
-
-    cache_enabled       BOOLEAN     NOT NULL DEFAULT FALSE,
-
-    cache_ttl_seconds   INTEGER,
-
-    created_at          TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-    updated_at          TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    id                  uuid                                                        not null
+        primary key,
+    node_id             uuid                                                        not null
+        unique
+        references workflow_nodes
+            on delete cascade,
+    timeout_ms          integer,
+    retry_enabled       boolean                  default false                      not null,
+    retry_count         integer                  default 0                          not null,
+    retry_delay_ms      integer                  default 1000                       not null,
+    retry_strategy      varchar(50)              default 'fixed'::character varying not null,
+    continue_on_error   boolean                  default false                      not null,
+    always_execute      boolean                  default false                      not null,
+    execution_condition text,
+    concurrency_limit   integer,
+    cache_enabled       boolean                  default false                      not null,
+    cache_ttl_seconds   integer,
+    created_at          timestamp with time zone default CURRENT_TIMESTAMP          not null,
+    updated_at          timestamp with time zone default CURRENT_TIMESTAMP          not null
 );
 
--- ============================================================================
--- WORKFLOW EDGES
--- ============================================================================
+create index idx_nodes_type
+    on workflow_nodes (type);
 
-CREATE TABLE workflow_edges
+create index idx_nodes_version
+    on workflow_nodes (workflow_version_id);
+
+create index idx_workflow_nodes_type
+    on workflow_nodes (type);
+
+create index idx_workflow_nodes_version
+    on workflow_nodes (workflow_version_id);
+
+create index idx_versions_workflow
+    on workflow_versions (workflow_id);
+
+create table workspaces
 (
-    id                  UUID PRIMARY KEY,
-
-    workflow_version_id UUID         NOT NULL
-        REFERENCES workflow_versions (id)
-            ON DELETE CASCADE,
-
-    source_node_id      UUID         NOT NULL
-        REFERENCES workflow_nodes (id)
-            ON DELETE CASCADE,
-
-    target_node_id      UUID         NOT NULL
-        REFERENCES workflow_nodes (id)
-            ON DELETE CASCADE,
-
-    source_port         VARCHAR(100) NOT NULL DEFAULT 'output',
-
-    target_port         VARCHAR(100) NOT NULL DEFAULT 'input',
-
-    edge_type           VARCHAR(50)  NOT NULL DEFAULT 'success',
-
-    label               VARCHAR(200),
-
-    config              JSONB        NOT NULL DEFAULT '{}'::jsonb,
-
-    created_at          TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-    CHECK (source_node_id <> target_node_id)
+    id          uuid                                                         not null
+        primary key,
+    user_id     uuid                                                         not null,
+    name        varchar(200)                                                 not null,
+    slug        varchar(100)                                                 not null,
+    description text,
+    status      varchar(30)              default 'active'::character varying not null,
+    is_default  boolean                  default false                       not null,
+    settings    jsonb                    default '{}'::jsonb                 not null,
+    created_at  timestamp with time zone default CURRENT_TIMESTAMP           not null,
+    updated_at  timestamp with time zone default CURRENT_TIMESTAMP           not null,
+    unique (user_id, slug)
 );
 
--- ============================================================================
--- VARIABLES
--- ============================================================================
-
-CREATE TABLE variables
+create table folders
 (
-    id           UUID PRIMARY KEY,
-
-    workspace_id UUID         NOT NULL
-        REFERENCES workspaces (id)
-            ON DELETE CASCADE,
-
-    folder_id    UUID         NOT NULL
-        REFERENCES folders (id)
-            ON DELETE SET NULL,
-
-    name         VARCHAR(200) NOT NULL,
-
-    value        TEXT         NOT NULL,
-
-    encrypted    BOOLEAN      NOT NULL DEFAULT FALSE,
-
-    created_at   TIMESTAMPTZ  NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-    updated_at   TIMESTAMPTZ  NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-    UNIQUE (workspace_id, folder_id, name)
+    id           uuid                                               not null
+        primary key,
+    workspace_id uuid                                               not null
+        references workspaces
+            on delete cascade,
+    name         varchar(200)                                       not null,
+    slug         varchar(200)                                       not null,
+    description  text,
+    position     integer                  default 0                 not null,
+    is_default   boolean                  default false             not null,
+    created_at   timestamp with time zone default CURRENT_TIMESTAMP not null,
+    updated_at   timestamp with time zone default CURRENT_TIMESTAMP not null,
+    unique (workspace_id, name),
+    unique (workspace_id, slug)
 );
 
--- ============================================================================
--- CONNECTIONS
--- ============================================================================
-CREATE TABLE connections
+create table connections
 (
-    id           UUID PRIMARY KEY,
-
-    workspace_id UUID         NOT NULL
-        REFERENCES workspaces (id)
-            ON DELETE CASCADE,
-
-    folder_id    UUID
-                              REFERENCES folders (id)
-                                  ON DELETE SET NULL,
-
-    name         VARCHAR(200) NOT NULL,
-
-    type         VARCHAR(100) NOT NULL,
-
-    provider     VARCHAR(100) NOT NULL,
-
-    credentials  JSONB        NOT NULL DEFAULT '{}'::jsonb,
-
-    encrypted    BOOLEAN      NOT NULL DEFAULT TRUE,
-
-    status       VARCHAR(30)  NOT NULL DEFAULT 'active',
-
-    metadata     JSONB        NOT NULL DEFAULT '{}'::jsonb,
-
-    created_at   TIMESTAMPTZ  NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-    updated_at   TIMESTAMPTZ  NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-    UNIQUE (workspace_id, folder_id, name)
+    id           uuid                                                         not null
+        primary key,
+    workspace_id uuid                                                         not null
+        references workspaces
+            on delete cascade,
+    folder_id    uuid                                                         not null
+        references folders
+            on delete set null,
+    name         varchar(200)                                                 not null,
+    type         varchar(100)                                                 not null,
+    provider     varchar(100)                                                 not null,
+    credentials  jsonb                    default '{}'::jsonb                 not null,
+    encrypted    boolean                  default true                        not null,
+    status       varchar(30)              default 'active'::character varying not null,
+    metadata     jsonb                    default '{}'::jsonb                 not null,
+    created_at   timestamp with time zone default CURRENT_TIMESTAMP           not null,
+    updated_at   timestamp with time zone default CURRENT_TIMESTAMP           not null,
+    constraint connections_pk
+        unique (workspace_id, folder_id, name)
 );
 
-CREATE TABLE workflow_node_connections
+create index idx_connections_workspace
+    on connections (workspace_id);
+
+create index idx_folders_workspace
+    on folders (workspace_id);
+
+create table variables
 (
-    node_id       UUID NOT NULL
-        REFERENCES workflow_nodes (id)
-            ON DELETE CASCADE,
-
-    connection_id UUID NOT NULL
-        REFERENCES connections (id)
-            ON DELETE CASCADE,
-
-    purpose       VARCHAR(100) DEFAULT 'default',
-
-    PRIMARY KEY (node_id, connection_id)
+    id           uuid                                               not null
+        primary key,
+    workspace_id uuid                                               not null
+        references workspaces
+            on delete cascade,
+    folder_id    uuid                                               not null
+        references folders
+            on delete set null,
+    name         varchar(200)                                       not null,
+    value        text                                               not null,
+    encrypted    boolean                  default false             not null,
+    created_at   timestamp with time zone default CURRENT_TIMESTAMP not null,
+    updated_at   timestamp with time zone default CURRENT_TIMESTAMP not null
 );
 
-CREATE TABLE connection_types
+
+create index idx_variables_workspace
+    on variables (workspace_id);
+
+create unique index variables_workspace_id_folde_id_name_key
+    on variables (workspace_id, folder_id, name);
+
+create table workflow_node_connections
 (
-    id         UUID PRIMARY KEY,
-
-    type       VARCHAR(100) UNIQUE NOT NULL,
-
-    provider   VARCHAR(100)        NOT NULL,
-
-    schema     JSONB               NOT NULL,
-
-    created_at TIMESTAMPTZ         NOT NULL DEFAULT CURRENT_TIMESTAMP
+    node_id       uuid not null
+        references workflow_nodes
+            on delete cascade,
+    connection_id uuid not null
+        references connections
+            on delete cascade,
+    purpose       varchar(100) default 'default'::character varying,
+    primary key (node_id, connection_id)
 );
 
--- ============================================================================
--- WORKFLOW TRIGGERS
--- ============================================================================
 
-CREATE TABLE workflow_triggers
+create table workflows
 (
-    id          UUID PRIMARY KEY,
-
-    workflow_id UUID        NOT NULL
-        REFERENCES workflows (id)
-            ON DELETE CASCADE,
-
-    type        VARCHAR(50) NOT NULL,
-
-    config      JSONB       NOT NULL,
-
-    enabled     BOOLEAN     NOT NULL DEFAULT TRUE
+    id                 uuid                                                        not null
+        primary key,
+    workspace_id       uuid                                                        not null
+        references workspaces
+            on delete cascade,
+    folder_id          uuid
+                                                                                   references folders
+                                                                                       on delete set null,
+    name               varchar(250)                                                not null,
+    slug               varchar(150)                                                not null,
+    description        text,
+    status             varchar(30)              default 'draft'::character varying not null,
+    active             boolean                  default false                      not null,
+    current_version_id uuid
+        constraint workflows_workflow_versions_id_fk
+            references workflow_versions,
+    created_by         uuid,
+    settings           jsonb                    default '{}'::jsonb                not null,
+    metadata           jsonb                    default '{}'::jsonb                not null,
+    created_at         timestamp with time zone default CURRENT_TIMESTAMP          not null,
+    updated_at         timestamp with time zone default CURRENT_TIMESTAMP          not null,
+    constraint workflows_pk
+        unique (workspace_id, folder_id, name)
 );
 
--- ============================================================================
--- WEBHOOKS
--- ============================================================================
-
-CREATE TABLE webhooks
+create table execution_queue
 (
-    id                    UUID PRIMARY KEY,
-
-    workflow_id           UUID         NOT NULL
-        REFERENCES workflows (id)
-            ON DELETE CASCADE,
-
-    trigger_id            UUID         NOT NULL
-        REFERENCES workflow_triggers (id)
-            ON DELETE CASCADE,
-
-    name                  VARCHAR(200) NOT NULL,
-
-    path                  VARCHAR(255) NOT NULL UNIQUE,
-
-    method                VARCHAR(10)  NOT NULL DEFAULT 'POST',
-
-    authentication_type   VARCHAR(50)  NOT NULL DEFAULT 'none',
-
-    authentication_config JSONB        NOT NULL DEFAULT '{}'::jsonb,
-
-    response_mode         VARCHAR(50)  NOT NULL DEFAULT 'immediate',
-
-    response_config       JSONB        NOT NULL DEFAULT '{}'::jsonb,
-
-    enabled               BOOLEAN      NOT NULL DEFAULT TRUE,
-
-    created_at            TIMESTAMPTZ  NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-    updated_at            TIMESTAMPTZ  NOT NULL DEFAULT CURRENT_TIMESTAMP
+    id                  uuid                                                          not null
+        primary key,
+    workflow_id         uuid                                                          not null
+        references workflows
+            on delete cascade,
+    workflow_version_id uuid                                                          not null
+        references workflow_versions
+            on delete cascade,
+    trigger_type        varchar(50)                                                   not null,
+    trigger_id          uuid,
+    payload             jsonb                    default '{}'::jsonb                  not null,
+    priority            integer                  default 0                            not null,
+    status              varchar(30)              default 'pending'::character varying not null,
+    attempts            integer                  default 0                            not null,
+    max_attempts        integer                  default 3                            not null,
+    available_at        timestamp with time zone default CURRENT_TIMESTAMP            not null,
+    started_at          timestamp with time zone,
+    completed_at        timestamp with time zone,
+    locked_by           varchar(100),
+    locked_until        timestamp with time zone,
+    error_message       text,
+    created_at          timestamp with time zone default CURRENT_TIMESTAMP            not null,
+    updated_at          timestamp with time zone default CURRENT_TIMESTAMP            not null
 );
 
--- ============================================================================
--- SCHEDULES
--- ============================================================================
 
-CREATE TABLE schedules
+create index idx_queue_available
+    on execution_queue (available_at);
+
+create index idx_queue_status
+    on execution_queue (status);
+
+create table workflow_executions
 (
-    id              UUID PRIMARY KEY,
-
-    workflow_id     UUID         NOT NULL
-        REFERENCES workflows (id)
-            ON DELETE CASCADE,
-
-    trigger_id      UUID         NOT NULL
-        REFERENCES workflow_triggers (id)
-            ON DELETE CASCADE,
-
-    name            VARCHAR(200) NOT NULL,
-
-    type            VARCHAR(50)  NOT NULL DEFAULT 'cron',
-
-    cron_expression VARCHAR(100),
-
-    misfire_policy  VARCHAR(30)           DEFAULT 'execute_once',
-
-    interval_value  INTEGER,
-
-    interval_unit   VARCHAR(20),
-
-    timezone        VARCHAR(100) NOT NULL DEFAULT 'UTC',
-
-    enabled         BOOLEAN      NOT NULL DEFAULT TRUE,
-
-    next_run_at     TIMESTAMPTZ,
-
-    last_run_at     TIMESTAMPTZ,
-
-    created_at      TIMESTAMPTZ  NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-    updated_at      TIMESTAMPTZ  NOT NULL DEFAULT CURRENT_TIMESTAMP
+    id            uuid        not null
+        primary key,
+    workflow_id   uuid        not null
+        references workflows,
+    version       integer     not null,
+    status        varchar(30) not null,
+    started_at    timestamp   not null,
+    finished_at   timestamp,
+    duration_ms   bigint,
+    trigger_type  varchar(50),
+    input         jsonb,
+    output        jsonb,
+    error_message text
 );
 
--- ============================================================================
--- EXECUTION QUEUE
--- ============================================================================
 
-CREATE TABLE execution_queue
+create table execution_steps
 (
-    id                  UUID PRIMARY KEY,
-
-    workflow_id         UUID        NOT NULL
-        REFERENCES workflows (id)
-            ON DELETE CASCADE,
-
-    workflow_version_id UUID        NOT NULL
-        REFERENCES workflow_versions (id)
-            ON DELETE CASCADE,
-
-    trigger_type        VARCHAR(50) NOT NULL,
-
-    trigger_id          UUID,
-
-    payload             JSONB       NOT NULL DEFAULT '{}'::jsonb,
-
-    priority            INTEGER     NOT NULL DEFAULT 0,
-
-    status              VARCHAR(30) NOT NULL DEFAULT 'pending',
-
-    attempts            INTEGER     NOT NULL DEFAULT 0,
-
-    max_attempts        INTEGER     NOT NULL DEFAULT 3,
-
-    available_at        TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-    started_at          TIMESTAMPTZ,
-
-    completed_at        TIMESTAMPTZ,
-
-    locked_by           VARCHAR(100),
-
-    locked_until        TIMESTAMPTZ,
-
-    error_message       TEXT,
-
-    created_at          TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-    updated_at          TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
--- ============================================================================
--- EXECUTIONS
--- ============================================================================
-
-CREATE TABLE workflow_executions
-(
-    id            UUID PRIMARY KEY,
-
-    workflow_id   UUID        NOT NULL
-        REFERENCES workflows (id),
-
-    version       INTEGER     NOT NULL,
-
-    status        VARCHAR(30) NOT NULL,
-
-    started_at    TIMESTAMP   NOT NULL,
-
-    finished_at   TIMESTAMP,
-
-    duration_ms   BIGINT,
-
-    trigger_type  VARCHAR(50),
-
-    input         JSONB,
-
-    output        JSONB,
-
-    error_message TEXT
+    id             uuid                                                          not null
+        primary key,
+    execution_id   uuid                                                          not null
+        references workflow_executions
+            on delete cascade,
+    node_id        uuid                                                          not null
+        references workflow_nodes,
+    parent_step_id uuid
+        references execution_steps,
+    status         varchar(30)              default 'pending'::character varying not null,
+    attempt        integer                  default 1                            not null,
+    started_at     timestamp with time zone,
+    finished_at    timestamp with time zone,
+    duration_ms    bigint,
+    input          jsonb                    default '{}'::jsonb                  not null,
+    output         jsonb                    default '{}'::jsonb                  not null,
+    error_code     varchar(100),
+    error_message  text,
+    metadata       jsonb                    default '{}'::jsonb                  not null,
+    created_at     timestamp with time zone default CURRENT_TIMESTAMP            not null
 );
 
--- ============================================================================
--- EXECUTION STEPS
--- ============================================================================
+create index idx_execution_steps_execution
+    on execution_steps (execution_id);
 
-CREATE TABLE execution_steps
+create index idx_execution_started
+    on workflow_executions (started_at desc);
+
+create index idx_execution_status
+    on workflow_executions (status);
+
+create index idx_execution_workflow
+    on workflow_executions (workflow_id);
+
+create table workflow_triggers
 (
-    id             UUID PRIMARY KEY,
-
-    execution_id   UUID        NOT NULL
-        REFERENCES workflow_executions (id)
-            ON DELETE CASCADE,
-
-    node_id        UUID        NOT NULL
-        REFERENCES workflow_nodes (id),
-
-    parent_step_id UUID
-        REFERENCES execution_steps (id),
-
-    status         VARCHAR(30) NOT NULL DEFAULT 'pending',
-
-    attempt        INTEGER     NOT NULL DEFAULT 1,
-
-    started_at     TIMESTAMPTZ,
-
-    finished_at    TIMESTAMPTZ,
-
-    duration_ms    BIGINT,
-
-    input          JSONB       NOT NULL DEFAULT '{}'::jsonb,
-
-    output         JSONB       NOT NULL DEFAULT '{}'::jsonb,
-
-    error_code     VARCHAR(100),
-
-    error_message  TEXT,
-
-    metadata       JSONB       NOT NULL DEFAULT '{}'::jsonb,
-
-    created_at     TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    id          uuid                 not null
+        primary key,
+    workflow_id uuid                 not null
+        references workflows
+            on delete cascade,
+    type        varchar(50)          not null,
+    config      jsonb                not null,
+    enabled     boolean default true not null
 );
 
--- ============================================================================
--- INDEXES
--- ============================================================================
+create table schedules
+(
+    id              uuid                                                       not null
+        primary key,
+    workflow_id     uuid                                                       not null
+        references workflows
+            on delete cascade,
+    trigger_id      uuid                                                       not null
+        references workflow_triggers
+            on delete cascade,
+    name            varchar(200)                                               not null,
+    type            varchar(50)              default 'cron'::character varying not null,
+    cron_expression varchar(100),
+    misfire_policy  varchar(30)              default 'execute_once'::character varying,
+    interval_value  integer,
+    interval_unit   varchar(20),
+    timezone        varchar(100)             default 'UTC'::character varying  not null,
+    enabled         boolean                  default true                      not null,
+    next_run_at     timestamp with time zone,
+    last_run_at     timestamp with time zone,
+    created_at      timestamp with time zone default CURRENT_TIMESTAMP         not null,
+    updated_at      timestamp with time zone default CURRENT_TIMESTAMP         not null
+);
 
-CREATE INDEX idx_workspaces_user
-    ON workspaces (user_id);
+create index idx_schedules_workflow
+    on schedules (workflow_id);
 
-CREATE INDEX idx_folders_workspace
-    ON folders (workspace_id);
+create table webhooks
+(
+    id                    uuid                                                            not null
+        primary key,
+    workflow_id           uuid                                                            not null
+        references workflows
+            on delete cascade,
+    trigger_id            uuid                                                            not null
+        references workflow_triggers
+            on delete cascade,
+    name                  varchar(200)                                                    not null,
+    path                  varchar(255)                                                    not null
+        unique,
+    method                varchar(10)              default 'POST'::character varying      not null,
+    authentication_type   varchar(50)              default 'none'::character varying      not null,
+    authentication_config jsonb                    default '{}'::jsonb                    not null,
+    response_mode         varchar(50)              default 'immediate'::character varying not null,
+    response_config       jsonb                    default '{}'::jsonb                    not null,
+    enabled               boolean                  default true                           not null,
+    created_at            timestamp with time zone default CURRENT_TIMESTAMP              not null,
+    updated_at            timestamp with time zone default CURRENT_TIMESTAMP              not null
+);
 
-CREATE INDEX idx_workflows_workspace
-    ON workflows (workspace_id);
 
-CREATE INDEX idx_workflows_folder
-    ON workflows (folder_id);
+create index idx_webhooks_workflow
+    on webhooks (workflow_id);
 
-CREATE INDEX idx_versions_workflow
-    ON workflow_versions (workflow_id);
+create index idx_triggers_workflow
+    on workflow_triggers (workflow_id);
 
-CREATE INDEX idx_nodes_version
-    ON workflow_nodes (workflow_version_id);
+alter table workflow_versions
+    add foreign key (workflow_id) references workflows
+        on delete cascade;
 
-CREATE INDEX idx_nodes_type
-    ON workflow_nodes (type);
+create index idx_workflows_folder
+    on workflows (folder_id);
 
-CREATE INDEX idx_edges_version
-    ON workflow_edges (workflow_version_id);
+create index idx_workflows_workspace
+    on workflows (workspace_id);
 
-CREATE INDEX idx_edges_source
-    ON workflow_edges (source_node_id);
+create index idx_workspaces_user
+    on workspaces (user_id);
 
-CREATE INDEX idx_edges_target
-    ON workflow_edges (target_node_id);
-
-CREATE INDEX idx_variables_workspace
-    ON variables (workspace_id);
-
-CREATE INDEX idx_connections_workspace
-    ON connections (workspace_id);
-
-CREATE INDEX idx_triggers_workflow
-    ON workflow_triggers (workflow_id);
-
-CREATE INDEX idx_webhooks_workflow
-    ON webhooks (workflow_id);
-
-CREATE INDEX idx_schedules_workflow
-    ON schedules (workflow_id);
-
-CREATE INDEX idx_queue_status
-    ON execution_queue (status);
-
-CREATE INDEX idx_queue_available
-    ON execution_queue (available_at);
-
-CREATE INDEX idx_execution_workflow
-    ON workflow_executions (workflow_id);
-
-CREATE INDEX idx_execution_status
-    ON workflow_executions (status);
-
-CREATE INDEX idx_execution_started
-    ON workflow_executions (started_at DESC);
-
-CREATE INDEX idx_execution_steps_execution
-    ON execution_steps (execution_id);
-
-CREATE INDEX idx_workflow_nodes_version
-    ON workflow_nodes (workflow_version_id);
-
-CREATE INDEX idx_workflow_nodes_type
-    ON workflow_nodes (type);

@@ -77,9 +77,8 @@ fe:
 #BACKGROUND TENANT WORKSPACE PROVISIONING
 workspace:
   provisioning:
-    # Off by default: aws.eks.cluster-name is empty locally, and EksClusterAuthProvider throws when
-    # it is, so an enabled poller would just burn retries until every job dead-letters. Jobs still
-    # enqueue while disabled and drain once this is switched on.
+    # Kubernetes access comes from KubernetesClientFactory's auto-configuration (KUBECONFIG env
+    # var, ~/.kube/config, or the in-cluster service account) - no property here controls it.
     enabled: ${WORKSPACE_PROVISIONING_ENABLED:true}
     poll-interval-ms: ${WORKSPACE_PROVISIONING_POLL_INTERVAL_MS:5000}
     initial-delay-ms: ${WORKSPACE_PROVISIONING_INITIAL_DELAY_MS:15000}
@@ -117,9 +116,6 @@ tenant:
     # Per-role cap, so one tenant cannot exhaust the server's max_connections on its own.
     connection-limit: ${TENANT_DB_CONNECTION_LIMIT:20}
     secret:
-      # Off locally: there are no AWS credentials here, and a hard failure would dead-letter every
-      # job at this step.
-      aws-secrets-manager-enabled: ${TENANT_DB_SECRETS_MANAGER_ENABLED:true}
       kubernetes-enabled: ${TENANT_DB_K8S_SECRET_ENABLED:false}
       name-prefix: ${TENANT_DB_SECRET_PREFIX}
       kubernetes-name: ${TENANT_DB_K8S_SECRET_NAME}
@@ -163,15 +159,6 @@ ratelimit:
       maxRequests: ${RATE_LIMIT_ONBOARDING_MAX_REQUESTS:60}
       windowSeconds: ${RATE_LIMIT_ONBOARDING_WINDOW_SECONDS:60}
       enabled: ${RATE_LIMIT_ONBOARDING_ENABLED:true}
-
-#AWS SDK CONFIGURATION
-aws:
-  region: ${AWS_REGION}
-  eks:
-    cluster-name: ${EKS_CLUSTER_NAME}
-  local:
-    assume-role-arn: ${AWS_LOCAL_ASSUME_ROLE_ARN}
-    profile: ${AWS_LOCAL_PROFILE}
 
 server:
   port: ${PORT}

@@ -14,13 +14,12 @@ import com.tenantos.registrar.repository.TenantRepository;
 import com.tenantos.registrar.repository.TenantsRegistrationRepository;
 import com.tenantos.registrar.repository.UserRepository;
 import com.tenantos.registrar.entity.User;
-import com.tenantos.registrar.services.aws.TenantEksSecretWriter;
-import com.tenantos.registrar.services.aws.TenantDbSecretsManagerPublisher;
+import com.tenantos.registrar.services.kubernetes.TenantSecretWriter;
 import com.tenantos.registrar.services.database.ProvisionedTenantDatabase;
 import com.tenantos.registrar.services.database.TenantDatabaseProvisioner;
 import com.tenantos.registrar.services.database.TenantSchemaMigrator;
 import com.tenantos.registrar.services.tenant.TenantProvisioningStep;
-import com.tenantos.registrar.services.tenant.steps.records.ProvisionedAwsSecret;
+import com.tenantos.registrar.services.tenant.steps.records.ProvisionedSecret;
 import com.tenantos.registrar.services.workspace.TenantWorkspaceProvisioningStore;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -61,11 +60,7 @@ public class CreateTenantDatabaseStep implements TenantProvisioningStep {
   private final AuditLogRepository auditLogRepository;
   private final TenantDatabaseProvisioner tenantDatabaseProvisioner;
   private final TenantSchemaMigrator tenantSchemaMigrator;
-  private final TenantEksSecretWriter tenantEksSecretWriter;
-  // Absent unless tenant.database.secret.aws-secrets-manager-enabled is true - the publisher and
-  // its
-  // client bean are both conditional, so environments with no AWS never construct either.
-  private final Optional<TenantDbSecretsManagerPublisher> secretsManagerPublisher;
+  private final TenantSecretWriter tenantSecretWriter;
   private final TenantWorkspaceProvisioningStore store;
 
   @Override
@@ -121,13 +116,7 @@ public class CreateTenantDatabaseStep implements TenantProvisioningStep {
                             + " - CREATE_USER did not run"));
     tenantSchemaMigrator.migrate(provisioned, user, tenant);
 
-    // System of record first, mirror second. If only one write lands, the retry overwrites both.
-    String secretArn =
-        secretsManagerPublisher
-            .map(publisher -> publisher.publish(tenant, provisioned))
-            .orElse(null);
-
-    ProvisionedAwsSecret secret = tenantEksSecretWriter.write(tenant, provisioned);
+    ProvisionedSecret secret = tenantSecretWriter.write(tenant, provisioned);
 
     // Loaded before writing rather than rebuilt: saving a freshly built entity merges over the
     // stored row and carries the new instance's created_at with it, losing the first provision's
@@ -141,11 +130,10 @@ public class CreateTenantDatabaseStep implements TenantProvisioningStep {
     tenantDatabase.setRoleName(provisioned.roleName());
     tenantDatabase.setHost(provisioned.host());
     tenantDatabase.setPort(provisioned.port());
-    tenantDatabase.setSecretArn(secretArn);
     tenantDatabase.setSecretName(
-        Optional.ofNullable(secret).map(ProvisionedAwsSecret::name).orElse(null));
+        Optional.ofNullable(secret).map(ProvisionedSecret::name).orElse(null));
     tenantDatabase.setSecretNamespace(
-        Optional.ofNullable(secret).map(ProvisionedAwsSecret::namespace).orElse(null));
+        Optional.ofNullable(secret).map(ProvisionedSecret::namespace).orElse(null));
     tenantDatabase.setProvisionedAt(Instant.now());
     tenantDatabaseRepository.save(tenantDatabase);
 

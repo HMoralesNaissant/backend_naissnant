@@ -1,12 +1,13 @@
-package com.tenantos.registrar.services.aws;
+package com.tenantos.registrar.services.kubernetes;
 
 import com.tenantos.registrar.entity.Tenant;
 import com.tenantos.registrar.entity.TenantNamespace;
 import com.tenantos.registrar.repository.TenantNamespaceRepository;
 import com.tenantos.registrar.services.database.ProvisionedTenantDatabase;
-import com.tenantos.registrar.services.tenant.steps.records.ProvisionedAwsSecret;
+import com.tenantos.registrar.services.tenant.steps.records.ProvisionedSecret;
 import io.fabric8.kubernetes.api.model.Secret;
 import io.fabric8.kubernetes.api.model.SecretBuilder;
+import io.fabric8.kubernetes.client.KubernetesClient;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -17,10 +18,8 @@ import java.util.Map;
 
 /**
  * Publishes a tenant's database credential into their Kubernetes namespace as a Secret, so their
- * workloads can mount it without knowing anything about how it was provisioned.
- *
- * <p>This is the mirror, not the system of record - that is AWS Secrets Manager. Both are written
- * on every provisioning attempt, so they converge rather than being reconciled.
+ * workloads can mount it without knowing anything about how it was provisioned. This is the system
+ * of record for the credential - nothing else stores it.
  *
  * <p>Applied with server-side apply, which makes republishing idempotent. That matters more here
  * than it looks: the step that calls this cannot be transactional (CREATE DATABASE forbids it), so
@@ -29,7 +28,7 @@ import java.util.Map;
 @Service
 @Slf4j
 @RequiredArgsConstructor
-public class TenantEksSecretWriter {
+public class TenantSecretWriter {
 
   private static final String MANAGED_BY_LABEL = "app.kubernetes.io/managed-by";
   private static final String MANAGED_BY_VALUE = "tenantos-registrar";
@@ -50,10 +49,10 @@ public class TenantEksSecretWriter {
    * Writes (or overwrites) the credential Secret in the tenant's namespace and returns the name it
    * was written under.
    */
-  public ProvisionedAwsSecret write(Tenant tenant, ProvisionedTenantDatabase database) {
+  public ProvisionedSecret write(Tenant tenant, ProvisionedTenantDatabase database) {
 
     if (!kubernetesSecretEnabled) {
-      return new ProvisionedAwsSecret(null, null);
+      return new ProvisionedSecret(null, null);
     }
     String secretNamespace = null;
     // Failing loudly rather than deriving the name: an absent row means CREATE_NAMESPACE never
@@ -95,8 +94,8 @@ public class TenantEksSecretWriter {
             .withStringData(values)
             .build();
 
-    try (KubernetesClientFactory.AuthenticatedClient session = kubernetesClientFactory.open()) {
-      session.client().resource(secret).inNamespace(secretNamespace).serverSideApply();
+    try (KubernetesClient client = kubernetesClientFactory.open()) {
+      client.resource(secret).inNamespace(secretNamespace).serverSideApply();
     }
 
     log.info(
@@ -104,6 +103,6 @@ public class TenantEksSecretWriter {
         secretNamespace,
         secretName,
         tenant.getId());
-    return new ProvisionedAwsSecret(secretName, secretNamespace);
+    return new ProvisionedSecret(secretName, secretNamespace);
   }
 }

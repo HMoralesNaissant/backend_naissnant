@@ -17,7 +17,7 @@ import java.util.concurrent.ThreadPoolExecutor;
 public class AsyncConfig {
 
   /**
-   * Deliberately small and bounded. Provisioning is I/O against the EKS control plane, and a burst
+   * Deliberately small and bounded. Provisioning is I/O against the Kubernetes control plane, and a burst
    * of registrations shouldn't turn into a burst of concurrent API calls against it. CallerRuns
    * rejection means an overflow slows the submitting thread down instead of dropping the kick -
    * losing one is harmless anyway (the job row is durable and the poller retries), but backpressure

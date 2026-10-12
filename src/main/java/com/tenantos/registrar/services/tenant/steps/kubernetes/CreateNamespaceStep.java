@@ -1,4 +1,4 @@
-package com.tenantos.registrar.services.tenant.steps.aws;
+package com.tenantos.registrar.services.tenant.steps.kubernetes;
 
 import com.tenantos.registrar.entity.AuditLog;
 import com.tenantos.registrar.entity.Tenant;
@@ -10,8 +10,8 @@ import com.tenantos.registrar.enums.ProvisioningStep;
 import com.tenantos.registrar.repository.AuditLogRepository;
 import com.tenantos.registrar.repository.TenantNamespaceRepository;
 import com.tenantos.registrar.repository.TenantRepository;
-import com.tenantos.registrar.services.aws.EksNamespaceProvisioner;
-import com.tenantos.registrar.services.aws.ProvisionedNamespace;
+import com.tenantos.registrar.services.kubernetes.NamespaceProvisioner;
+import com.tenantos.registrar.services.kubernetes.ProvisionedNamespace;
 import com.tenantos.registrar.services.tenant.AbstractTransactionalStep;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -26,7 +26,7 @@ public class CreateNamespaceStep extends AbstractTransactionalStep {
 
   private final TenantRepository tenantRepository;
   private final TenantNamespaceRepository tenantNamespaceRepository;
-  private final EksNamespaceProvisioner ekaNamespaceProvisioner;
+  private final NamespaceProvisioner namespaceProvisioner;
   private final AuditLogRepository auditLogRepository;
 
   @Override
@@ -51,27 +51,12 @@ public class CreateNamespaceStep extends AbstractTransactionalStep {
                             + registration.getTenantId()
                             + " not found - CREATE_TENANT did not run"));
 
-    ProvisionedNamespace actualProvisioned = ekaNamespaceProvisioner.initializeWorkspace(tenant);
-    ProvisionedNamespace provisioned =
-        new ProvisionedNamespace(
-            actualProvisioned.namespace(),
-            actualProvisioned.clusterName(),
-            actualProvisioned.clusterEndpoint(),
-            actualProvisioned.awsRegion());
-
-    // If Kubernetes container is down
-    //    ProvisionedNamespace provisioned =
-    //        new ProvisionedNamespace(
-    //            tenantWorkspaceInitialization.namespaceNameFor(tenant.getSlug()),
-    //            eksClusterAuthProvider.clusterName(),
-    //            null,
-    //            eksClusterAuthProvider.awsRegion());
+    ProvisionedNamespace provisioned = namespaceProvisioner.initializeWorkspace(tenant);
 
     // Keyed on tenant_id, so a retry updates this row rather than appending a second one. Loaded
     // before writing rather than rebuilt: saving a freshly built entity merges over the stored row,
     // which would carry the new instance's created_at with it and lose the first apply's timestamp
-    // -
-    // the very thing that makes created_at worth having next to applied_at.
+    // - the very thing that makes created_at worth having next to applied_at.
     TenantNamespace tenantNamespace =
         tenantNamespaceRepository
             .findById(tenant.getId())
@@ -80,7 +65,6 @@ public class CreateNamespaceStep extends AbstractTransactionalStep {
     tenantNamespace.setNamespace(provisioned.namespace());
     tenantNamespace.setClusterName(provisioned.clusterName());
     tenantNamespace.setClusterEndpoint(provisioned.clusterEndpoint());
-    tenantNamespace.setAwsRegion(provisioned.awsRegion());
     tenantNamespace.setAppliedAt(Instant.now());
     tenantNamespaceRepository.save(tenantNamespace);
 

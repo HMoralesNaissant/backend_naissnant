@@ -169,10 +169,10 @@ public class OnboardingService {
 
     onboardingEmailService.sendAccountRegistrationInProgress(saved);
 
-    // Everything the account is made of - user, tenant, RBAC, subscription, EKS namespace - is
-    // provisioned out-of-band, not here: it ends in seconds of AWS and Kubernetes I/O, which has no
-    // business inside this transaction holding a pooled connection open, and an AWS hiccup must not
-    // roll back a registration the user is about to be told succeeded. enqueue() only writes the
+    // Everything the account is made of - user, tenant, RBAC, subscription, Kubernetes namespace -
+    // is provisioned out-of-band, not here: it ends in seconds of Kubernetes I/O, which has no
+    // business inside this transaction holding a pooled connection open, and a cluster hiccup must
+    // not roll back a registration the user is about to be told succeeded. enqueue() only writes the
     // job row, in this same transaction, so the job can neither survive a rollback nor be lost
     // after a commit.
     tenantWorkspaceProvisioningService.enqueue(saved);

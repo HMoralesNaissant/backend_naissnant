@@ -20,7 +20,7 @@ Registration ends with a verified email, a password, and an account name. Turnin
 working tenant means creating a dozen related records and one Kubernetes namespace. Those two
 halves have nothing in common operationally:
 
-| | Database work | EKS namespace |
+| | Database work | Kubernetes namespace |
 |---|---|---|
 | Cost | ~1 ms | seconds |
 | Failure mode | constraint violation (deterministic) | network/API outage (transient) |
@@ -28,9 +28,9 @@ halves have nothing in common operationally:
 | Availability | same as the service | independent third party |
 
 Running both inside `OnboardingService.register()` would hold a pooled connection open across
-multi-second AWS calls and let an EKS outage roll back an account the user was already told exists.
-Running both in one background transaction would mean an EKS failure replays the RBAC seed and
-duplicates fifty permission grants on every attempt.
+multi-second Kubernetes calls and let a cluster outage roll back an account the user was already
+told exists. Running both in one background transaction would mean a cluster failure replays the
+RBAC seed and duplicates fifty permission grants on every attempt.
 
 So provisioning is a **durable, resumable pipeline**: registration commits a job row and returns;
 a worker walks the job through ordered steps, persisting how far it got.
@@ -45,7 +45,7 @@ sequenceDiagram
     participant Reg as OnboardingService
     participant DB as Postgres
     participant W as Provisioning worker
-    participant EKS as EKS / Kubernetes
+    participant K8s as Kubernetes
     participant M as SMTP
 
     C->>API: POST /onboarding/account-registration
@@ -72,8 +72,8 @@ sequenceDiagram
     W->>DB: 4 CREATE_MEMBERSHIP — owner + user_roles
     W->>DB: 5 CREATE_SUBSCRIPTION — free trial
     W->>DB: 6 CREATE_API_KEY — internal key (hash only)
-    W->>EKS: 7 CREATE_NAMESPACE — get, then create if absent
-    W->>EKS: 8 CREATE_TENANT_DATABASE — CREATE DATABASE + publish credential
+    W->>K8s: 7 CREATE_NAMESPACE — get, then create if absent
+    W->>K8s: 8 CREATE_TENANT_DATABASE — CREATE DATABASE + publish credential
     W->>M: 9 SEND_CONFIRMATION
     W->>DB: status = WORKSPACE_READY
 
@@ -97,14 +97,15 @@ structurally rather than defensively — no step contains a "have I already run?
 
 - A step that fails rolls back its work *and* the advance. The retry re-enters a step that left no
   trace of its previous attempt, so it cannot duplicate rows or emit a second audit event.
-- A step that succeeds is never re-run, because `current_step` has moved past it. An EKS outage at
-  step 7 retries only step 7 — `users`, `tenants`, `roles`, and `audit_logs` row counts stay flat
+- A step that succeeds is never re-run, because `current_step` has moved past it. A cluster outage
+  at step 7 retries only step 7 — `users`, `tenants`, `roles`, and `audit_logs` row counts stay flat
   no matter how many attempts it takes.
 
 `CREATE_NAMESPACE` follows the same contract as the database steps — it extends
 `AbstractTransactionalStep`, so the `tenant_namespace` row it writes, its audit entry and the
-advance all commit together. It buys that at the cost of holding a pooled connection across the EKS
-call, which is acceptable only because the work either side of the commit is genuinely idempotent:
+advance all commit together. It buys that at the cost of holding a pooled connection across the
+Kubernetes call, which is acceptable only because the work either side of the commit is genuinely
+idempotent:
 the provisioner looks the namespace up and skips creating one that already exists, and
 `tenant_namespace` is keyed on `tenant_id`, so a retry upserts rather than duplicates.
 
@@ -120,10 +121,10 @@ a transaction block**, so the step could not be transactional even if that were 
 for that with convergence rather than skipping. Postgres offers no `CREATE DATABASE IF NOT EXISTS`
 and no way to read a role's password back, so a retry cannot recover what the last attempt
 generated — instead every run mints a fresh password, `ALTER ROLE`s it if the role already exists,
-and republishes to both secret stores. Whatever a crash left behind, the next attempt lands on the
+and republishes the Kubernetes Secret. Whatever a crash left behind, the next attempt lands on the
 same known state.
 
-The visible cost: a failed attempt can leave a live Secrets Manager value that no longer opens the
+The visible cost: a failed attempt can leave a live Kubernetes Secret value that no longer opens the
 database, until the retry catches up.
 
 Three further guards make double-provisioning impossible even if a job were somehow claimed twice:
@@ -196,14 +197,14 @@ read-modify-write per tenant while `tenants` rows are near-immutable; separating
 row small. The PK choice also makes the step that creates it idempotent for free.
 
 **`tenant_namespace`** (V6) — 1:1 with `tenants`, keyed on `tenant_id`, holding the namespace name
-plus the cluster it was applied to (name, endpoint, region) and when. Written by
-`CreateNamespaceStep`. It exists because `tenant_workspace_provisioning.namespace` was the only
-record of a provisioned workspace, and that is a column on a *queue* row: the job is claimed,
-retried and eventually irrelevant, whereas "this tenant is on namespace X of cluster Y" is a durable
-fact about the tenant. The old column also named no cluster at all, so a second EKS cluster — or a
-replaced one — would leave existing tenants unlocatable. `namespace` is `UNIQUE` for the same reason
-`tenants.slug` is: two tenants sharing a namespace is a cross-tenant leak, not a duplicate row. The
-cluster columns are nullable because only the live EKS path knows them.
+plus the cluster it was applied to (name, endpoint) and when. Written by `CreateNamespaceStep`. It
+exists because `tenant_workspace_provisioning.namespace` was the only record of a provisioned
+workspace, and that is a column on a *queue* row: the job is claimed, retried and eventually
+irrelevant, whereas "this tenant is on namespace X of cluster Y" is a durable fact about the tenant.
+The old column also named no cluster at all, so a second Kubernetes cluster — or a replaced one —
+would leave existing tenants unlocatable. `namespace` is `UNIQUE` for the same reason `tenants.slug`
+is: two tenants sharing a namespace is a cross-tenant leak, not a duplicate row. The cluster columns
+are nullable because only the live path — the one talking to a real cluster — knows them.
 
 **`tenant_database`** (V7) — 1:1 with `tenants`, keyed on `tenant_id`, recording the tenant's own
 Postgres database: its name, its login role, and the host/port their workloads dial. Written by
@@ -225,9 +226,9 @@ the catalog — other tenants' database and role *names* are readable, though no
 Closing that is a cluster-build step (`REVOKE CONNECT ON DATABASE postgres FROM PUBLIC`), not
 something the provisioning step can do to the database its own admin connects through.
 
-**The table holds no password.** The credential is published to AWS Secrets Manager (the system of
-record) and mirrored into a Kubernetes `Secret` in the tenant's namespace; the three `secret_*`
-columns are pointers to those, and are nullable because either publisher can be switched off. This
+**The table holds no password.** The credential is published to a Kubernetes `Secret` in the
+tenant's namespace, which is the system of record for it; the `secret_name`/`secret_namespace`
+columns are pointers to that Secret, and are nullable because publishing can be switched off. This
 is the same stance `CreateApiKeyStep` takes on its plaintext, with one difference that matters: an
 API key hash is enough to *verify* a credential, but a database password must be *presented*, so
 "forget it" only works because something else is remembering it.
@@ -306,8 +307,8 @@ OnboardingService.register()               validate + enqueue; commits registrat
                  ├─ CreateMembershipStep     │ work + advance in ONE transaction
                  ├─ CreateSubscriptionStep   │
                  ├─ CreateApiKeyStep         │
-                 ├─ CreateNamespaceStep     ─┘ (also external I/O; safe because the EKS
-                 │                             apply and tenant_namespace are both idempotent)
+                 ├─ CreateNamespaceStep     ─┘ (also external I/O; safe because the get-then-
+                 │                             create check and tenant_namespace are both idempotent)
                  ├─ CreateTenantDatabaseStep external I/O, own advance — CANNOT be
                  │                           transactional: CREATE DATABASE is rejected
                  │                           inside a transaction block
@@ -338,9 +339,8 @@ bean handles each `ProvisioningStep`. A missing or duplicated step fails the con
 than stranding a tenant's job at 3am.
 
 **Dependencies.** `TenantSlugGenerator` (normalization + collision suffixes),
-`EksNamespaceProvisioner` (EKS namespace via `KubernetesClientFactory`),
-`TenantDatabaseProvisioner` (per-tenant Postgres), `TenantDbSecretWriter` +
-`TenantDbSecretsManagerPublisher` (credential publishing),
+`NamespaceProvisioner` (Kubernetes namespace via `KubernetesClientFactory`),
+`TenantDatabaseProvisioner` (per-tenant Postgres), `TenantSecretWriter` (credential publishing),
 `OnboardingEmailService` (confirmation), `HashUtils` (SHA-256 for the API key), plus the
 repositories.
 
@@ -381,7 +381,7 @@ anything at all before the token's own expiry.
 transaction so the user, registration, and job row are atomic — the outbox property that makes the
 job impossible to lose or to leak. Each step is its own `REQUIRES_NEW` transaction so steps commit
 independently and step 3 failing does not undo steps 1–2. The orchestrator holds *no* transaction,
-so no connection is pinned across the EKS call.
+so no connection is pinned across the Kubernetes call.
 
 **Optimistic vs pessimistic locking.** Neither, for the tenant rows — provisioning is the only
 writer during its window, so contention is not the problem. The contention that does exist is
@@ -396,13 +396,17 @@ exists; it would buy nothing today.
 `last_error` for diagnosis and manual replay. Because `current_step` persists, a replay resumes
 rather than restarts.
 
-**EKS authentication has a hard 15-minute ceiling.** The bearer token is a presigned STS
-`GetCallerIdentity` URL, and EKS rejects any whose `X-Amz-Expires` exceeds **900 seconds** — as a
-**401**, before it identifies the caller at all, which is indistinguishable at a glance from a
-missing access entry. `EksClusterAuthProvider` signs for 60 seconds, matching `aws eks get-token`,
-and is wired into the client as fabric8's `OAuthTokenProvider` rather than as a fixed string, so a
-token is minted per request and no client can outlive its credential. Reach for that ceiling before
-suspecting IAM when EKS calls start returning 401.
+**Kubernetes authentication is fabric8's own auto-configuration, not IAM.**
+`KubernetesClientFactory` calls `Config.autoConfigure(null)` once and caches the result for the
+process lifetime; every client it opens is built from that same config. That auto-configuration is
+the same discovery `kubectl` uses: the `KUBECONFIG` env var (or `kubeconfig` system property) if
+set, else `~/.kube/config`, else the in-cluster service account token when running as a pod - so no
+code here decides which one applies, and the deployed container needs no kubeconfig at all, only
+RBAC bound to its service account. There is no per-request token to mint or refresh, which is
+simpler than the EKS/IAM presigned-token scheme this replaced, but it also means a rotated or
+revoked credential is not picked up until the process restarts. Resolution happens lazily, on first
+use, the same way the EKS cluster name used to be — an environment that never provisions a namespace
+(local dev with `workspace.provisioning.enabled=false`) never pays for it.
 
 **Distributed events.** The outbox row is the seam where a real broker slots in. Publishing to SQS
 or Kafka inside `register()`'s transaction would risk the classic dual-write failure — message sent,
@@ -428,7 +432,7 @@ change to `runPendingBatch`'s trigger, not to the pipeline.
 no distributed lock, and no coordination — `SKIP LOCKED` is the entire mechanism. Throughput scales
 with replica count until the database becomes the bottleneck, which it will not at registration
 volumes. The executor is bounded (2–4 threads, `CallerRunsPolicy`) on purpose: unbounded
-concurrency would let a registration burst stampede the EKS control plane, which rate-limits.
+concurrency would let a registration burst stampede the Kubernetes control plane, which rate-limits.
 
 **Eventual consistency.** The account is strongly consistent (one transaction); the tenant is
 eventually consistent (seconds later). That is visible to users and handled explicitly: the 201

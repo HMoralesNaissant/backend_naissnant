@@ -20,9 +20,8 @@ import java.util.UUID;
  * <p>Keyed by tenant_id like {@link TenantSettings} and {@link TenantNamespace} - 1:1 with the
  * tenant, which is what lets the step re-run after a failure and upsert rather than duplicate.
  *
- * <p>Carries no password, by design. The credential is published to AWS Secrets Manager and to a
- * Kubernetes Secret in the tenant's namespace; the columns here only say where to find it. Reading
- * it back means fetching the Secrets Manager value at {@link #secretArn}.
+ * <p>Carries no password, by design. The credential is published to a Kubernetes Secret in the
+ * tenant's namespace; the columns here only say where to find it.
  */
 @Entity
 @Table(name = "tenant_database")
@@ -52,10 +51,6 @@ public class TenantDatabase extends BaseAuditFields {
 
   @Column(name = "port", nullable = false)
   private int port;
-
-  /** Null when Secrets Manager publishing is disabled, as it is locally. */
-  @Column(name = "secret_arn", length = 2048)
-  private String secretArn;
 
   @Column(name = "secret_name", length = 253)
   private String secretName;

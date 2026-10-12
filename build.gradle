@@ -24,17 +24,6 @@ repositories {
     mavenCentral()
 }
 
-
-ext {
-    awsSdkVersion = '2.49.4'
-}
-
-dependencyManagement {
-    imports {
-        mavenBom "software.amazon.awssdk:bom:${awsSdkVersion}"
-    }
-}
-
 dependencies {
     //Springboot dependencies
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
@@ -63,26 +52,8 @@ dependencies {
     //PostgresSQL
     runtimeOnly 'org.postgresql:postgresql'
 
-    //AWS SDK v2 - credential resolution (env vars, EC2/ECS instance profile, EKS pod/IRSA web identity)
-    implementation 'software.amazon.awssdk:auth'
-    implementation 'software.amazon.awssdk:regions'
-    implementation 'software.amazon.awssdk:sts'
-
-    //AWS SDK v2 - SSO-backed named profiles (aws.local.profile). Never referenced directly in code;
-    //ProfileCredentialsProvider loads these reflectively, and throws "the 'sso' service module must
-    //be on the class path" at runtime without them. Both are needed: `sso` for the legacy cached-token
-    //profile, `sso-oidc` for the modern sso_session token-refresh flow `aws sso login` now sets up.
-    runtimeOnly 'software.amazon.awssdk:sso'
-    runtimeOnly 'software.amazon.awssdk:ssooidc'
-
-    //AWS SDK v2 - EKS cluster discovery + IAM-based Kubernetes API authentication
-    implementation 'software.amazon.awssdk:eks'
-    implementation 'software.amazon.awssdk:http-auth-aws'
-
-    //AWS SDK v2 - system of record for per-tenant database credentials
-    implementation 'software.amazon.awssdk:secretsmanager'
-
-    //Kubernetes client - talks to the EKS control plane using EksClusterAuthProvider's token
+    //Kubernetes client - talks to the cluster's API server using a kubeconfig fetched from a URL
+    //(see kubernetes.kubeconfig-url / KUBE_CONFIG_URL)
     implementation 'io.fabric8:kubernetes-client:7.8.0'
 
     //Tests
@@ -95,7 +66,7 @@ dependencies {
 }
 
 // Read from system environment or fallback to local defaults for convenience
-def dbUrl = System.getenv('DB_URL') ?: "jdbc:postgresql://localhost:54321/${System.getenv('DB_NAME') ?: 'tenantos_registrar'}"
+def dbUrl = System.getenv('DB_URL') ?: "jdbc:postgresql://192.168.40.10:54321/${System.getenv('DB_NAME') ?: 'tenantos_registrar'}"
 def dbUser = System.getenv('POSTGRES_USER') ?: 'tenantos-master'
 def dbPassword = System.getenv('POSTGRES_PASSWORD') ?: 'c4rl0sP@ssw0rds'
 
@@ -105,7 +76,7 @@ flyway {
     password = dbPassword
     locations = ['classpath:db/migration']
     baselineOnMigrate = true
-    cleanDisabled = true
+    cleanDisabled = false
     // flywayClean drops the whole schema; keep it opt-in only
 }
 

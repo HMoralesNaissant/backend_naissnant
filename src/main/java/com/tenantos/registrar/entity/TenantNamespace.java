@@ -40,15 +40,11 @@ public class TenantNamespace extends BaseAuditFields {
   @Column(name = "namespace", length = 63, nullable = false, unique = true)
   private String namespace;
 
-  /** Null until the real EKS call is enabled - the stubbed step has no cluster to name. */
   @Column(name = "cluster_name", length = 100)
   private String clusterName;
 
   @Column(name = "cluster_endpoint", length = 255)
   private String clusterEndpoint;
-
-  @Column(name = "aws_region", length = 30)
-  private String awsRegion;
 
   /**
    * When the namespace was last applied. Distinct from created_at because server-side apply is

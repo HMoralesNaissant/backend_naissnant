@@ -279,7 +279,7 @@ public class OnboardingRestController {
         .<ResponseEntity<?>>map(
             job ->
                 ResponseEntity.ok(
-                    // last_error/attempts stay server-side - they can carry AWS/EKS internals.
+                    // last_error/attempts stay server-side - they can carry Kubernetes client internals.
                     new WorkspaceStatusResponse(
                         job.getStatus().name(),
                         job.getNamespace(),

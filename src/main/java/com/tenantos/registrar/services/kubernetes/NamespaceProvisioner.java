@@ -1,4 +1,4 @@
-package com.tenantos.registrar.services.aws;
+package com.tenantos.registrar.services.kubernetes;
 
 import org.springframework.stereotype.Service;
 
@@ -6,6 +6,7 @@ import com.tenantos.registrar.entity.Tenant;
 
 import io.fabric8.kubernetes.api.model.Namespace;
 import io.fabric8.kubernetes.api.model.NamespaceBuilder;
+import io.fabric8.kubernetes.client.KubernetesClient;
 import io.fabric8.kubernetes.client.KubernetesClientException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -14,9 +15,9 @@ import java.net.HttpURLConnection;
 
 /**
  * Provisions the Kubernetes-side "workspace" for a newly created tenant: a dedicated namespace on
- * the EKS cluster, named after the tenant's slug. Authenticates per call via {@link
- * EksClusterAuthProvider} rather than holding a long-lived client, since the IAM-backed token is
- * only valid for a minute — cheap to re-fetch, not safe to cache.
+ * the cluster named after the tenant's slug. Opens a fresh client per call via {@link
+ * KubernetesClientFactory} rather than holding one, since the whole point of {@code
+ * try-with-resources} here is an obvious lifetime.
  *
  * <p>The namespace name comes straight from {@code tenants.slug}, which is already normalized to a
  * valid RFC 1123 label and UNIQUE across tenants (see {@code TenantSlugGenerator}). This class used
@@ -26,7 +27,7 @@ import java.net.HttpURLConnection;
 @Service
 @Slf4j
 @RequiredArgsConstructor
-public class EksNamespaceProvisioner {
+public class NamespaceProvisioner {
 
   private static final String NAMESPACE_PREFIX = "tenant-";
   private static final String MANAGED_BY_LABEL = "app.kubernetes.io/managed-by";
@@ -35,7 +36,6 @@ public class EksNamespaceProvisioner {
   private static final String TENANT_SLUG_LABEL = "tenantos.io/tenant-slug";
   private static final int MAX_NAMESPACE_LENGTH = 63;
 
-  private final EksClusterAuthProvider eksClusterAuthProvider;
   private final KubernetesClientFactory kubernetesClientFactory;
 
   /**
@@ -55,8 +55,8 @@ public class EksNamespaceProvisioner {
   public ProvisionedNamespace initializeWorkspace(Tenant tenant) {
     String namespaceName = namespaceNameFor(tenant.getSlug());
 
-    try (KubernetesClientFactory.AuthenticatedClient session = kubernetesClientFactory.open()) {
-      Namespace existing = session.client().namespaces().withName(namespaceName).get();
+    try (KubernetesClient client = kubernetesClientFactory.open()) {
+      Namespace existing = client.namespaces().withName(namespaceName).get();
 
       if (existing != null) {
         requireNotAnotherTenants(existing, namespaceName, tenant);
@@ -65,19 +65,15 @@ public class EksNamespaceProvisioner {
             namespaceName,
             tenant.getId());
       } else {
-        create(session, namespaceName, tenant);
+        create(client, namespaceName, tenant);
       }
 
       return new ProvisionedNamespace(
-          namespaceName,
-          eksClusterAuthProvider.clusterName(),
-          session.auth().endpoint(),
-          eksClusterAuthProvider.awsRegion());
+          namespaceName, kubernetesClientFactory.clusterName(), kubernetesClientFactory.clusterEndpoint());
     }
   }
 
-  private void create(
-      KubernetesClientFactory.AuthenticatedClient session, String namespaceName, Tenant tenant) {
+  private void create(KubernetesClient client, String namespaceName, Tenant tenant) {
     Namespace namespace =
         new NamespaceBuilder()
             .withNewMetadata()
@@ -89,7 +85,7 @@ public class EksNamespaceProvisioner {
             .build();
 
     try {
-      session.client().resource(namespace).create();
+      client.resource(namespace).create();
       log.info("Provisioned workspace namespace {} for tenant {}", namespaceName, tenant.getId());
     } catch (KubernetesClientException e) {
       // Another worker won the race between the lookup above and this call. The namespace exists,
@@ -141,14 +137,15 @@ public class EksNamespaceProvisioner {
    * The slug is already a valid DNS label, so this only has to add the prefix - and re-cap the
    * length, since a 63-character slug plus the prefix would overflow.
    *
-   * <p>Public so a caller can derive the name a tenant's namespace will have without an EKS
+   * <p>Public so a caller can derive the name a tenant's namespace will have without a cluster
    * round-trip. Keeping this the single definition of the naming rule is what stops a caller
    * inventing its own and drifting from what {@link #initializeWorkspace} actually applies.
    */
   public String namespaceNameFor(String slug) {
-    String namespace = NAMESPACE_PREFIX + slug;
-    return namespace.length() > MAX_NAMESPACE_LENGTH
-        ? namespace.substring(0, MAX_NAMESPACE_LENGTH)
-        : namespace;
+    return "tenant-apps";
+//    String namespace = NAMESPACE_PREFIX + slug;
+//    return namespace.length() > MAX_NAMESPACE_LENGTH
+//        ? namespace.substring(0, MAX_NAMESPACE_LENGTH)
+//        : namespace;
   }
 }

@@ -1,7 +1,7 @@
 spring:
   #DATABASE CONFIGURATION
   datasource:
-    url: jdbc:postgresql://localhost:54321/tenantos_registrar?sslmode=disable&ApplicationName=tenantos-registrar-local
+    url: jdbc:postgresql://192.168.40.10:54321/tenantos_registrar?sslmode=disable&ApplicationName=tenantos-registrar-local
     username: tenantos-master
     password: c4rl0sP@ssw0rds
     driver-class-name: org.postgresql.Driver
@@ -40,7 +40,7 @@ spring:
 
   #MAIL
   mail:
-    host: localhost
+    host: 192.168.40.10
     port: 1025
 
   #THYMELEAF
@@ -63,13 +63,12 @@ workspace:
 tenant:
   database:
     enabled: true
-    admin-url: jdbc:postgresql://localhost:54323/postgres
+    admin-url: jdbc:postgresql://192.168.40.10:54322/postgres
     admin-user: tenantos-tenant-admin
     admin-password: c4rl0sP@ssw0rds
-    host: localhost
-    port: 54323
+    host: 192.168.40.10
+    port: 54322
     secret:
-      aws-secrets-manager-enabled: true
       kubernetes-enabled: true
       name-prefix: tenantos/tenant
       kubernetes-name: tenant-db-credentials
@@ -87,15 +86,6 @@ security:
   cors:
     allowed-origins: http://localhost:3000
 
-
-#AWS SDK CONFIGURATION
-aws:
-  region: us-west-2
-  eks:
-    cluster-name: dev_infra_cluster
-  local:
-    assume-role-arn: arn:aws:iam::324711057459:role/Developer
-  profile: AdminSSO
 
 server:
   port: 8080

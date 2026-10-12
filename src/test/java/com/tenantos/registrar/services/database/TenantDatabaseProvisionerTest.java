@@ -23,9 +23,9 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  * green on a machine with no containers up.
  *
  * <p>These three assertions are the ones nothing else can make. The provisioning step deliberately
- * forgets the password it generates - it goes to Secrets Manager and a Kubernetes Secret and
- * nowhere else - so an end-to-end run through the pipeline cannot check that the credential opens
- * anything. Calling the provisioner directly is the only place the password is observable.
+ * forgets the password it generates - it goes to a Kubernetes Secret and nowhere else - so an
+ * end-to-end run through the pipeline cannot check that the credential opens anything. Calling the
+ * provisioner directly is the only place the password is observable.
  */
 class TenantDatabaseProvisionerTest {
 

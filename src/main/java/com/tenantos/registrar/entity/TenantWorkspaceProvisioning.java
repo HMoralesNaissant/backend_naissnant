@@ -82,7 +82,7 @@ public class TenantWorkspaceProvisioning extends BaseAuditFields {
   @Column(name = "completed_at")
   private Instant completedAt;
 
-  // Diagnostic only - never surfaced over the API, it can carry AWS/EKS internals.
+  // Diagnostic only - never surfaced over the API, it can carry Kubernetes client internals.
   @Column(name = "last_error", columnDefinition = "TEXT")
   private String lastError;
 }

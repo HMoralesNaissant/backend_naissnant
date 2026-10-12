@@ -18,7 +18,7 @@ import java.util.List;
 /**
  * The transactional half of workspace provisioning: every short-lived database transaction the
  * provisioning worker needs, each committing on its own so none of them are open while
- * {@link TenantWorkspaceProvisioningService} is out talking to EKS.
+ * {@link TenantWorkspaceProvisioningService} is out talking to Kubernetes.
  *
  * <p>This is a separate bean on purpose. Spring's {@code @Transactional} is proxy-based, so if
  * these methods lived on the service that calls them, the self-invocation would skip the proxy

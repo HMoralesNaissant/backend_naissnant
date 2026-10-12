@@ -27,10 +27,10 @@ import java.util.Optional;
  * RBAC, membership, subscription, API key, Kubernetes namespace, confirmation.
  *
  * <p>Why a pipeline rather than one big method: the steps have wildly different costs and failure
- * modes. Creating a tenant row is a millisecond of local database work; creating an EKS namespace
- * is seconds of network I/O against a service that can be down. Persisting {@code current_step}
- * means an EKS outage retries only the namespace, instead of replaying the RBAC seed and
- * duplicating fifty permission grants each time.
+ * modes. Creating a tenant row is a millisecond of local database work; creating a Kubernetes
+ * namespace is seconds of network I/O against a cluster that can be down. Persisting
+ * {@code current_step} means a cluster outage retries only the namespace, instead of replaying the
+ * RBAC seed and duplicating fifty permission grants each time.
  *
  * <p>This class holds no transaction of its own. Each database step opens and commits its own (see
  * {@code AbstractTransactionalStep}), which is also what keeps a connection from being pinned

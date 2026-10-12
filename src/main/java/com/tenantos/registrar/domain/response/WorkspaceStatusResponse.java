@@ -6,7 +6,7 @@ import java.time.Instant;
 
 /**
  * Public view of a workspace provisioning job. Deliberately omits last_error and attempts - those
- * can carry AWS/EKS internals and retry mechanics that mean nothing to the client.
+ * can carry Kubernetes client internals and retry mechanics that mean nothing to the client.
  */
 @Schema(name = "WorkspaceStatusResponse")
 public record WorkspaceStatusResponse(
