@@ -42,7 +42,7 @@ public class TenantInfisicalSecretWriter {
   private final SecureRandom secureRandom = new SecureRandom();
 
   /** Shared by every tenant backend; blank means the deploy is not configured with one. */
-  @Value("${tenant.deploy.redis-url:}")
+  @Value("${tenant.deployment.redis-url:}")
   private String redisUrl;
 
   @Value("${infisical.enabled:false}")

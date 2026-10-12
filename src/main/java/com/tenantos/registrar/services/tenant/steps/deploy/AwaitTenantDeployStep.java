@@ -34,7 +34,7 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class AwaitTenantDeployStep implements TenantProvisioningStep {
 
-  @Value("${tenant.deploy.enabled:false}")
+  @Value("${tenant.deployment.enabled:false}")
   private boolean enabled;
 
   private final TenantsRegistrationRepository tenantsRegistrationRepository;

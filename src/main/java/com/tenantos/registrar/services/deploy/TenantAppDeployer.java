@@ -36,23 +36,23 @@ public class TenantAppDeployer {
   public static final String BACKEND = "backend";
   public static final String UI = "ui";
 
-  // The name ends up as a Service/Ingress host label ("<name>-<env>"), which is capped at 63, so
-  // the slug part leaves room for the longest suffix ("-backend") and environment ("-staging").
+  // The name ends up as a Service/Ingress host label ("<name>"), which is capped at 63, so
+  // the slug part leaves room for the longest suffix ("-backend").
   private static final int MAX_SLUG_PART = 40;
 
-  @Value("${tenant.deploy.environment:dev}")
+  @Value("${tenant.deployment.environment:prod}")
   private String environment;
 
-  @Value("${tenant.deploy.backend-image:}")
+  @Value("${tenant.deployment.backend-image:}")
   private String backendImage;
 
-  @Value("${tenant.deploy.ui-image:}")
+  @Value("${tenant.deployment.ui-image:}")
   private String uiImage;
 
-  @Value("${tenant.deploy.await-timeout-seconds:240}")
+  @Value("${tenant.deployment.await-timeout-seconds:240}")
   private long awaitTimeoutSeconds;
 
-  @Value("${tenant.deploy.poll-interval-seconds:5}")
+  @Value("${tenant.deployment.poll-interval-seconds:5}")
   private long pollIntervalSeconds;
 
   private final ForgejoWorkflowClient forgejo;
@@ -109,7 +109,7 @@ public class TenantAppDeployer {
 
   private static void requireImage(String app, String image) {
     if (image.isBlank()) {
-      throw new IllegalStateException("tenant.deploy." + app + "-image is not set");
+      throw new IllegalStateException("tenant.deployment." + app + "-image is not set");
     }
   }
 

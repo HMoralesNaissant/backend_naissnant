@@ -29,7 +29,10 @@ const REQUIRED = [
 function buildTenantConfig(cfg, platform, e) {
   const out = structuredClone(cfg);
   const domain = platform[e.IN_ENV]?.domain ?? platform.defaults.domain;
-  const host = (name) => `https://${name}-${e.IN_ENV}.${domain}`;
+  // Tenant apps get a bare `<name>.<domain>` host: the environment is not part of their URL.
+  // The UI is the tenant's front door, so its host drops the `-ui` suffix its app name carries.
+  const hostname = (name) => `${name.replace(/-ui$/, "")}.${domain}`;
+  const host = (name) => `https://${hostname(name)}`;
 
   out.defaults ??= {};
   out.defaults.name = e.IN_APP_NAME;
@@ -41,6 +44,8 @@ function buildTenantConfig(cfg, platform, e) {
 
   const envCfg = (out[e.IN_ENV] ??= {});
   envCfg.namespace = e.IN_NAMESPACE;
+  // Overrides the ingress template's `<name>-<target>.<domain>` default.
+  envCfg.host = hostname(e.IN_APP_NAME);
   envCfg.env_variables ??= {};
   if (e.IN_APP === "backend") {
     envCfg.env_variables.CORS_ORIGINS = host(e.IN_UI_NAME);

@@ -73,6 +73,25 @@ tenant:
       name-prefix: tenantos/tenant
       kubernetes-name: tenant-db-credentials
 
+  deployment:
+    enabled: true
+    environment: dev
+    backend-image: forgejo.home.capilabs.dev/homelab/tenantos-backend:latest
+    ui-image: forgejo.home.capilabs.dev/homelab/tenantos-ui:latest
+    redis-url: redis://:redis%40P%40ssw0rds@192.168.40.11:6380
+    # Must stay well under workspace.provisioning.lease-seconds, or another worker re-claims the
+    # job while this one is still waiting.
+    await-timeout-seconds: ${TENANT_DEPLOY_AWAIT_TIMEOUT_SECONDS:240}
+    poll-interval-seconds: ${TENANT_DEPLOY_POLL_INTERVAL_SECONDS:5}
+    forgejo:
+      api-url: https://forgejo.home.capilabs.dev/
+      # Needs write access to Actions on the repository below.
+      token: bf9e80bd14841ca76e2e5668d5049c43cd9edaf4
+      # The repository holding .forgejo/workflows/tenant-deploy_v1.yml.
+      repository: Homelab/tenantos-registrar
+      workflow: tenant-deploy_v1.yml
+      ref: main
+
 infisical:
   enabled: true
   api-url: https://infisical.home.capilabs.dev
@@ -83,6 +102,9 @@ infisical:
   secrets:
     placeholder: ${INFISICAL_SECRET_PLACEHOLDER:CHANGE_ME}
     backend-keys: ${INFISICAL_BACKEND_SECRET_KEYS:DB_URL,DB_USER,DB_PASSWORD,JWT_SECRET}
+
+admin:
+  api-token: Cn70ElojCODN6RiIsFVudzFbv3OB*BXmUK907EtO
 
 #logging:
 #  level:

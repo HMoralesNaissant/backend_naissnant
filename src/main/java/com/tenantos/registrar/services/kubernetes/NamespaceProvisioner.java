@@ -78,6 +78,42 @@ public class NamespaceProvisioner {
     }
   }
 
+  /**
+   * Deletes the tenant's namespace, and with it every Deployment, Service, Ingress and Secret in
+   * it - including the apps the deploy workflow put there. Deletion is asynchronous on the
+   * cluster; this returns once it is accepted.
+   *
+   * <p>Refuses a namespace not annotated for this tenant: unlike provisioning, which may adopt a
+   * hand-made namespace, destroying one nobody can prove the registrar created is not acceptable.
+   *
+   * @return false when there was no such namespace
+   */
+  public boolean destroyWorkspace(Tenant tenant) {
+    String namespaceName = namespaceNameFor(tenant.getSlug());
+    try (KubernetesClient client = kubernetesClientFactory.open()) {
+      Namespace existing = client.namespaces().withName(namespaceName).get();
+      if (existing == null) {
+        return false;
+      }
+      String owner =
+          existing.getMetadata().getAnnotations() == null
+              ? null
+              : existing.getMetadata().getAnnotations().get(TENANT_ID_ANNOTATION);
+      if (!String.valueOf(tenant.getId()).equals(owner)) {
+        throw new IllegalStateException(
+            "Refusing to delete namespace "
+                + namespaceName
+                + ": not annotated "
+                + TENANT_ID_ANNOTATION
+                + "="
+                + tenant.getId());
+      }
+      client.namespaces().withName(namespaceName).delete();
+      log.info("Deleted namespace {} for tenant {}", namespaceName, tenant.getId());
+      return true;
+    }
+  }
+
   private void create(KubernetesClient client, String namespaceName, Tenant tenant) {
     Namespace namespace =
         new NamespaceBuilder()

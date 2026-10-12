@@ -126,6 +126,29 @@ public class TenantDatabaseProvisioner {
   }
 
   /**
+   * Drops the tenant's database and login role, terminating any session still connected. Absent
+   * objects are skipped, so a half-finished teardown can simply be run again. Irreversible.
+   */
+  public void drop(String slug) {
+    String databaseName = databaseNameFor(slug);
+    String roleName = roleNameFor(slug);
+
+    try (Connection connection =
+        DriverManager.getConnection(adminUrl, adminUser, adminPassword)) {
+      connection.setAutoCommit(true);
+      try (Statement statement = connection.createStatement()) {
+        // WITH (FORCE) (Postgres 13+) kicks out the tenant's running backend, which would
+        // otherwise hold the database open and fail the drop.
+        statement.executeUpdate("DROP DATABASE IF EXISTS \"" + databaseName + "\" WITH (FORCE)");
+        statement.executeUpdate("DROP ROLE IF EXISTS \"" + roleName + "\"");
+      }
+    } catch (SQLException e) {
+      throw new IllegalStateException("Failed to drop database " + databaseName, e);
+    }
+    log.info("Dropped database and role {}", databaseName);
+  }
+
+  /**
    * The database name a tenant's slug maps to. Public so a caller can derive it without connecting,
    * and so this stays the single definition of the rule - the same reasoning as
    * {@code NamespaceProvisioner.namespaceNameFor}.

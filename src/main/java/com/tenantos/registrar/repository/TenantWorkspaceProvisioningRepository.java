@@ -17,6 +17,8 @@ public interface TenantWorkspaceProvisioningRepository
 
   Optional<TenantWorkspaceProvisioning> findByCompanyEmail(String companyEmail);
 
+  void deleteByCompanyEmail(String companyEmail);
+
   /**
    * Claims a batch of jobs for this worker. FOR UPDATE SKIP LOCKED is what makes the poller safe
    * to run on every replica: concurrent workers step over each other's locked rows instead of

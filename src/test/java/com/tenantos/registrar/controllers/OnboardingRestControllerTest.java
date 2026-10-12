@@ -7,6 +7,8 @@ import com.tenantos.registrar.domain.response.AccountRegistrationResponse;
 import com.tenantos.registrar.entity.Onboarding;
 import com.tenantos.registrar.entity.TenantsRegistration;
 import com.tenantos.registrar.enums.TenantsRegistrationStatus;
+import com.tenantos.registrar.domain.response.AccountNameAvailabilityResponse;
+import com.tenantos.registrar.services.onboarding.AccountNameAvailabilityService;
 import com.tenantos.registrar.services.onboarding.OnboardingOnFlightTokenService;
 import com.tenantos.registrar.services.onboarding.OnboardingService;
 import com.tenantos.registrar.services.onboarding.OnboardingOtpService;
@@ -44,6 +46,7 @@ class OnboardingRestControllerTest {
   @Mock private OnboardingOnFlightTokenService onboardingOnFlightTokenService;
   @Mock private OnboardingOtpService onboardingTokenService;
   @Mock private TenantWorkspaceProvisioningService tenantWorkspaceProvisioningService;
+  @Mock private AccountNameAvailabilityService accountNameAvailabilityService;
 
   @InjectMocks private OnboardingRestController controller;
 
@@ -186,5 +189,18 @@ class OnboardingRestControllerTest {
 
     verify(onboardingOnFlightTokenService, never()).extractToken(servletRequest);
     verify(onboardingOnFlightTokenService, never()).validateAndConsume(any());
+  }
+
+  @Test
+  void accountNameAvailability_returnsTheServiceResult() {
+    AccountNameAvailabilityResponse taken =
+        new AccountNameAvailabilityResponse("acme", false, "acme-2");
+    when(accountNameAvailabilityService.check("Acme")).thenReturn(taken);
+
+    ResponseEntity<AccountNameAvailabilityResponse> result =
+        controller.accountNameAvailability("Acme");
+
+    assertThat(result.getStatusCode()).isEqualTo(HttpStatus.OK);
+    assertThat(result.getBody()).isEqualTo(taken);
   }
 }

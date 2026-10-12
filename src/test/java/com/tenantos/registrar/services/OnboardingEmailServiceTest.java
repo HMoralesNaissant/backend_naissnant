@@ -131,7 +131,7 @@ class OnboardingEmailServiceTest {
   void sendAccountRegistrationInProgress_rendersTemplateWithCompanyEmail_andSendsToThatAddress()
       throws Exception {
     TenantsRegistration registration =
-        TenantsRegistration.builder().companyEmail("a@example.com").build();
+        TenantsRegistration.builder().companyEmail("a@example.com").accountName("Acme Inc").build();
     MimeMessage mimeMessage = newMimeMessage();
     when(mailSender.createMimeMessage()).thenReturn(mimeMessage);
     ArgumentCaptor<Context> contextCaptor = ArgumentCaptor.forClass(Context.class);
@@ -147,6 +147,7 @@ class OnboardingEmailServiceTest {
     assertThat(mimeMessage.getSubject()).isEqualTo("Your tenantOS account setup is in progress");
 
     assertThat(contextCaptor.getValue().getVariable("companyEmail")).isEqualTo("a@example.com");
+    assertThat(contextCaptor.getValue().getVariable("accountName")).isEqualTo("Acme Inc");
   }
 
   @Test

@@ -8,8 +8,13 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.util.List;
+import java.util.UUID;
+
 @Repository
 public interface TenantsRegistrationRepository extends JpaRepository<TenantsRegistration, String> {
+
+  List<TenantsRegistration> findByTenantId(UUID tenantId);
 
   /**
    * Mirrors the provisioning job's status onto the registration row. A targeted update rather

@@ -144,7 +144,7 @@ public class OnboardingEmailService {
 
     public void sendAccountRegistrationInProgress(TenantsRegistration registration) {
         try {
-            String htmlBody = renderAccountRegistrationInProgressHtml(registration.getCompanyEmail());
+            String htmlBody = renderAccountRegistrationInProgressHtml(registration);
             String plainTextBody = "Thanks for registering. Your tenantOS account is being provisioned - "
                     + "we'll email you again once it's ready.";
 
@@ -163,9 +163,10 @@ public class OnboardingEmailService {
         }
     }
 
-    private String renderAccountRegistrationInProgressHtml(String companyEmail) {
+    private String renderAccountRegistrationInProgressHtml(TenantsRegistration registration) {
         Context context = new Context();
-        context.setVariable("companyEmail", companyEmail);
+        context.setVariable("companyEmail", registration.getCompanyEmail());
+        context.setVariable("accountName", registration.getAccountName());
         return templateEngine.process(ACCOUNT_REGISTRATION_INPROGRESS_TEMPLATE_NAME, context);
     }
 

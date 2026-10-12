@@ -118,12 +118,13 @@ tenant:
       name-prefix: ${TENANT_DB_SECRET_PREFIX}
       kubernetes-name: ${TENANT_DB_K8S_SECRET_NAME}
   #PER-TENANT APP DEPLOYMENT (DISPATCH_TENANT_DEPLOY / AWAIT_TENANT_DEPLOY steps)
-  deploy:
+  deployment:
     # Off by default: both steps log and advance instead of dead-lettering every tenant in an
     # environment with no Forgejo wired up.
-    enabled: ${TENANT_DEPLOY_ENABLED:false}
-    # Which skaffolder environment (dev, staging, prod) tenant apps are rendered for.
-    environment: ${TENANT_DEPLOY_ENV:dev}
+    enabled: ${TENANT_DEPLOY_ENABLED:true}
+    # Which skaffolder environment (dev, staging, prod) tenant apps are rendered for. Tenant apps
+    # all go to prod, and their hostnames carry no environment suffix.
+    environment: ${TENANT_DEPLOY_ENV:prod}
     # Full image refs deployed for every new tenant. Pin these to the tag promoted for the
     # environment; a mutable tag like :latest makes a tenant's first deploy non-reproducible.
     backend-image: ${TENANT_DEPLOY_BACKEND_IMAGE:}
@@ -179,6 +180,10 @@ logging:
     org.flywaydb: ${LOG_LEVEL_FLYWAY:DEBUG}
 
 #SECURITY CONFIGURATION
+# Operator endpoints (DELETE /admin/tenants). Blank disables them; set a long random value to enable.
+admin:
+  api-token: ${ADMIN_API_TOKEN}
+
 security:
   jwt:
     # Blank generates an ephemeral per-process key - fine locally, but tokens then die at restart

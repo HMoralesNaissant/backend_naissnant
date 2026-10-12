@@ -114,6 +114,9 @@ public class SecurityConfig {
                     .permitAll()
                     .requestMatchers("/actuator/**")
                     .permitAll()
+                    // Authenticated by X-Admin-Token inside TenantAdminController, not by JWT.
+                    .requestMatchers("/admin/**")
+                    .permitAll()
                     .anyRequest()
                     .authenticated());
 

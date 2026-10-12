@@ -131,6 +131,33 @@ public class InfisicalClient {
     }
   }
 
+  /**
+   * Deletes the folder at {@code path} (and everything under it) in every environment. A folder
+   * that is already gone is not an error.
+   */
+  public void deleteFolder(String path) {
+    RestClient http = authenticated();
+    String name = path.substring(path.lastIndexOf('/') + 1);
+    String parent = path.substring(0, path.lastIndexOf('/'));
+    for (String environment : environments) {
+      try {
+        http.method(org.springframework.http.HttpMethod.DELETE)
+            .uri("/api/v1/folders/{name}", name)
+            .contentType(MediaType.APPLICATION_JSON)
+            .body(
+                Map.of(
+                    "workspaceId", projectId,
+                    "environment", environment,
+                    "path", parent.isEmpty() ? "/" : parent))
+            .retrieve()
+            .toBodilessEntity();
+        log.info("Deleted Infisical folder {} in {}", path, environment);
+      } catch (org.springframework.web.client.HttpClientErrorException.NotFound e) {
+        log.info("Infisical folder {} not present in {}", path, environment);
+      }
+    }
+  }
+
   private Map<String, Object> secretBody(String environment, String path, String value) {
     return Map.of(
         "workspaceId", projectId,

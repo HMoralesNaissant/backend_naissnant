@@ -21,27 +21,27 @@ import java.util.Map;
 @Slf4j
 public class ForgejoWorkflowClient {
 
-  @Value("${tenant.deploy.forgejo.api-url:}")
+  @Value("${tenant.deployment.forgejo.api-url:}")
   private String apiUrl;
 
-  @Value("${tenant.deploy.forgejo.token:}")
+  @Value("${tenant.deployment.forgejo.token:}")
   private String token;
 
   /** {@code owner/name} of the repository holding the workflow. */
-  @Value("${tenant.deploy.forgejo.repository:}")
+  @Value("${tenant.deployment.forgejo.repository:}")
   private String repository;
 
-  @Value("${tenant.deploy.forgejo.workflow:tenant-deploy_v1.yml}")
+  @Value("${tenant.deployment.forgejo.workflow:tenant-deploy_v1.yml}")
   private String workflow;
 
-  @Value("${tenant.deploy.forgejo.ref:main}")
+  @Value("${tenant.deployment.forgejo.ref:main}")
   private String ref;
 
   public void dispatch(Map<String, String> inputs) {
     String[] parts = repository.split("/", 2);
     if (apiUrl.isBlank() || token.isBlank() || parts.length != 2) {
       throw new IllegalStateException(
-          "tenant.deploy.forgejo.api-url, token and repository (owner/name) must be set");
+          "tenant.deployment.forgejo.api-url, token and repository (owner/name) must be set");
     }
 
     RestClient.builder()

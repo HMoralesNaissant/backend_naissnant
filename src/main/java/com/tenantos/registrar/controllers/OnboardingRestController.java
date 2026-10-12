@@ -1,12 +1,14 @@
 package com.tenantos.registrar.controllers;
 
 import com.tenantos.registrar.domain.request.*;
+import com.tenantos.registrar.domain.response.AccountNameAvailabilityResponse;
 import com.tenantos.registrar.domain.response.AccountRegistrationResponse;
 import com.tenantos.registrar.domain.response.ValidateOtpResponse;
 import com.tenantos.registrar.domain.response.WorkspaceStatusResponse;
 import com.tenantos.registrar.entity.Onboarding;
 import com.tenantos.registrar.entity.TenantWorkspaceProvisioning;
 import com.tenantos.registrar.entity.TenantsRegistration;
+import com.tenantos.registrar.services.onboarding.AccountNameAvailabilityService;
 import com.tenantos.registrar.services.onboarding.OnboardingOnFlightTokenService;
 import com.tenantos.registrar.services.onboarding.OnboardingService;
 import com.tenantos.registrar.services.onboarding.OnboardingOtpService;
@@ -45,6 +47,7 @@ public class OnboardingRestController {
   private final OnboardingOtpService onboardingTokenService;
   private final OnboardingOnFlightTokenService onboardingOnFlightTokenService;
   private final TenantWorkspaceProvisioningService tenantWorkspaceProvisioningService;
+  private final AccountNameAvailabilityService accountNameAvailabilityService;
 
   @Operation(
       summary = "Issue a preflight onboarding token",
@@ -203,6 +206,37 @@ public class OnboardingRestController {
       @PathVariable String type, @Valid @RequestBody ResendCodeCommand request) {
     onboardingTokenService.resendCode(new ResendCodeCommand(request.companyEmail(), type));
     return ResponseEntity.ok().build();
+  }
+
+  @Operation(
+      summary = "Check whether an account name is available",
+      description =
+          "Tells the user, before they submit /onboarding/account-registration, whether the "
+              + "account name is already taken. A tenant is identified by the slug its name "
+              + "normalizes to, so names differing only in case or punctuation count as the same "
+              + "name. When taken, a free alternative is returned in `suggestion`. Advisory only: "
+              + "the name is not reserved, and registration still resolves a late collision by "
+              + "suffixing the slug. Requires a valid onboarding_token cookie, and counts against "
+              + "the /onboarding rate limit - debounce calls from the UI.")
+  @ApiResponses({
+    @ApiResponse(
+        responseCode = "200",
+        description = "Availability of the name",
+        content =
+            @Content(schema = @Schema(implementation = AccountNameAvailabilityResponse.class))),
+    @ApiResponse(
+        responseCode = "400",
+        description = "Bad Request - name missing, longer than 100 characters, or has no letters or digits",
+        content = @Content),
+    @ApiResponse(
+        responseCode = "403",
+        description = "Forbidden - missing, invalid, or expired onboarding token",
+        content = @Content)
+  })
+  @GetMapping("/account-name/availability")
+  public ResponseEntity<AccountNameAvailabilityResponse> accountNameAvailability(
+      @RequestParam(required = false) String name) {
+    return ResponseEntity.ok(accountNameAvailabilityService.check(name));
   }
 
   @Operation(

@@ -34,7 +34,7 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class DispatchTenantDeployStep implements TenantProvisioningStep {
 
-  @Value("${tenant.deploy.enabled:false}")
+  @Value("${tenant.deployment.enabled:false}")
   private boolean enabled;
 
   private final TenantsRegistrationRepository tenantsRegistrationRepository;
@@ -56,7 +56,7 @@ public class DispatchTenantDeployStep implements TenantProvisioningStep {
       // Advance rather than throw: an environment with no Forgejo wired up would otherwise
       // dead-letter every tenant here. AWAIT_TENANT_DEPLOY skips on the same flag.
       log.warn(
-          "tenant.deploy.enabled is false - skipping app deployment for {}", job.getCompanyEmail());
+          "tenant.deployment.enabled is false - skipping app deployment for {}", job.getCompanyEmail());
       store.advance(job.getProvisioningId(), step().next(), null);
       return;
     }
@@ -95,6 +95,8 @@ public class DispatchTenantDeployStep implements TenantProvisioningStep {
         namespace,
         tenant.getId(),
         job.getProvisioningId());
+
+    //Deploy tenant app to kubernetes
     tenantAppDeployer.requestDeploy(tenant, namespace);
 
     auditLogRepository.save(

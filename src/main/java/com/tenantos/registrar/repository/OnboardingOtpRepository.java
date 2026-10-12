@@ -16,6 +16,8 @@ public interface OnboardingOtpRepository extends JpaRepository<OnboardingOtp, St
 
   Optional<OnboardingOtp> findByCompanyEmail(String companyEmail);
 
+  void deleteByCompanyEmail(String companyEmail);
+
   @Query(
       "SELECT o FROM OnboardingOtp o WHERE o.companyEmail = :companyEmail AND o.status = CREATED")
   Optional<OnboardingOtp> findByCompanyEmailAndCreated(String companyEmail);
