@@ -29,9 +29,11 @@ RUN --mount=type=cache,target=/root/.gradle \
 COPY src ./src
 RUN --mount=type=cache,target=/root/.gradle \
     ./gradlew --no-daemon bootJar -x test && \
-    # Split into layers (dependencies / loader / snapshot / application) so a code-only
+    # Split into layers (dependencies / snapshot-dependencies / application) so a code-only
     # change pushes a few KB instead of the whole fat jar.
-    java -Djarmode=tools -jar build/libs/*[!-plain].jar extract --layers --destination /workspace/extracted
+    # Normalise the name (excluding the `-plain` jar) so the runner does not depend on the version.
+    cp "$(find build/libs -name '*.jar' ! -name '*-plain.jar' | head -n1)" app.jar && \
+    java -Djarmode=tools -jar app.jar extract --layers --destination /workspace/extracted
 
 # -----------------------------------------------------------------------------
 # runner — what actually ships
@@ -48,7 +50,6 @@ ENV PORT=8080
 ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError"
 
 COPY --chown=app:app --from=build /workspace/extracted/dependencies/ ./
-COPY --chown=app:app --from=build /workspace/extracted/spring-boot-loader/ ./
 COPY --chown=app:app --from=build /workspace/extracted/snapshot-dependencies/ ./
 COPY --chown=app:app --from=build /workspace/extracted/application/ ./
 
@@ -60,4 +61,5 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=60s --retries=3 \
     CMD curl -fsS http://127.0.0.1:${PORT}/actuator/health || exit 1
 
 ENTRYPOINT ["/sbin/tini", "--"]
-CMD ["sh", "-c", "exec java org.springframework.boot.loader.launch.JarLauncher"]
+# Boot 3.3+ has no JarLauncher in the layers: the app jar references ./lib/ via its manifest.
+CMD ["java", "-jar", "app.jar"]
