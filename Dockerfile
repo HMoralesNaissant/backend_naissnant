@@ -45,6 +45,9 @@ WORKDIR /app
 RUN apk add --no-cache tini curl && \
     addgroup -S -g 1001 app && adduser -S -u 1001 -G app app
 
+# application.yaml defaults to the `local` profile, whose hardcoded DB, SMTP and CORS values override
+# the env vars. A container must never run it; `container` has no file, so only env/base config apply.
+ENV SPRING_PROFILES_ACTIVE=container
 ENV PORT=8080
     # Size the heap from the container's memory limit, not the host's.
 ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError"
