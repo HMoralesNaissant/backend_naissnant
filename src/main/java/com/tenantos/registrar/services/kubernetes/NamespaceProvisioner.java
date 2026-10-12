@@ -56,6 +56,11 @@ public class NamespaceProvisioner {
     String namespaceName = namespaceNameFor(tenant.getSlug());
 
     try (KubernetesClient client = kubernetesClientFactory.open()) {
+      log.info(
+          "Provisioning workspace namespace {} for tenant {} on cluster {}",
+          namespaceName,
+          tenant.getId(),
+          kubernetesClientFactory.clusterName());
       Namespace existing = client.namespaces().withName(namespaceName).get();
 
       if (existing != null) {
@@ -142,10 +147,9 @@ public class NamespaceProvisioner {
    * inventing its own and drifting from what {@link #initializeWorkspace} actually applies.
    */
   public String namespaceNameFor(String slug) {
-    return "tenant-apps";
-//    String namespace = NAMESPACE_PREFIX + slug;
-//    return namespace.length() > MAX_NAMESPACE_LENGTH
-//        ? namespace.substring(0, MAX_NAMESPACE_LENGTH)
-//        : namespace;
+    String namespace = NAMESPACE_PREFIX + slug;
+    return namespace.length() > MAX_NAMESPACE_LENGTH
+        ? namespace.substring(0, MAX_NAMESPACE_LENGTH)
+        : namespace;
   }
 }

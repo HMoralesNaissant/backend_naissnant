@@ -1,0 +1,241 @@
+name: Deploy Tenant App
+
+# Dispatched by the registrar's DISPATCH_TENANT_DEPLOY provisioning step, once per app (backend, ui)
+# for every new tenant. It is not run by hand or by Kargo: the image is chosen by the registrar
+# (tenant.deploy.backend-image / ui-image), and the target is the tenant's own namespace.
+#
+# It reuses the platform's skaffolder templates and configs (the same ones build.yml uses) and
+# renders them for one tenant by writing a throwaway config next to the app's own:
+# configs/v1.yml (TENANT_CONFIG_NAME), derived from configs/tenantos-<app>.yml with the tenant's name, namespace,
+# Infisical folder and URLs swapped in. Nothing is committed to the configs repo.
+#
+# Render and apply happen in ONE job on purpose. build.yml splits them and ships an encrypted
+# artifact because it can; here the rendered Secret never has to leave the runner.
+on:
+  workflow_dispatch:
+    inputs:
+      env:
+        description: Skaffolder environment (dev, staging, prod)
+        required: true
+      tenant_slug:
+        description: Tenant slug
+        required: true
+      namespace:
+        description: Tenant namespace the app is deployed into
+        required: true
+      app:
+        description: backend or ui
+        required: true
+      app_name:
+        description: Resource name for this app, computed by the registrar
+        required: true
+      backend_name:
+        description: Resource name of the tenant's backend
+        required: true
+      ui_name:
+        description: Resource name of the tenant's UI
+        required: true
+      image:
+        description: Full image ref to deploy
+        required: true
+
+env:
+  REGISTRY: ${{ vars.REGISTRY_HOST_NAME }}
+  # Repo holding skaffolder's schemas/ (manifest templates) and configs/ (per-project values).
+  CONFIGS_REPO: Homelab/skaffolder-configs.git
+  NPM_REGISTRY_HOST: ${{ vars.NPM_REGISTRY_HOST }}
+  # Where the platform's own apps run; the registry pull secret is copied from here.
+  PLATFORM_NAMESPACE: tenant-apps-${{ inputs.env }}
+  PULL_SECRET_NAME: forgejo-registry
+  # File name (without .yml) of the generated per-tenant config, and the --name skaffolder reads it
+  # by. Each dispatch runs on its own runner with a fresh checkout, so one fixed name cannot clash;
+  # the Kubernetes resource names come from `defaults.name` inside the file, not from this.
+  TENANT_CONFIG_NAME: v1
+
+  INFISICAL_API_URL: ${{ vars.INFISICAL_API_URL }}
+  INFISICAL_CLIENT_ID: ${{ secrets.INFISICAL_CLIENT_ID }}
+  INFISICAL_CLIENT_SECRET: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+  INFISICAL_PROJECT_ID: ${{ secrets.INFISICAL_PROJECT_ID }}
+
+jobs:
+  deploy:
+    name: Deploy ${{ inputs.app }} for ${{ inputs.tenant_slug }}
+    runs-on: ubuntu-latest
+    # Two dispatches for the same tenant app (a retried provisioning step) must not apply at once.
+    concurrency:
+      group: tenant-deploy-${{ inputs.namespace }}-${{ inputs.app }}
+      cancel-in-progress: false
+    steps:
+      # Inputs reach the shell through env, never interpolated into the script: they come from the
+      # registrar, but a slug or name is still attacker-influenced text.
+      - name: Validate inputs
+        env:
+          IN_ENV: ${{ inputs.env }}
+          IN_SLUG: ${{ inputs.tenant_slug }}
+          IN_NAMESPACE: ${{ inputs.namespace }}
+          IN_APP: ${{ inputs.app }}
+          IN_APP_NAME: ${{ inputs.app_name }}
+          IN_BACKEND_NAME: ${{ inputs.backend_name }}
+          IN_UI_NAME: ${{ inputs.ui_name }}
+          IN_IMAGE: ${{ inputs.image }}
+        run: |
+          set -euo pipefail
+          label='^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$'
+          [[ "${IN_ENV}" =~ ^(dev|staging|prod)$ ]] || { echo "::error::bad env"; exit 1; }
+          [[ "${IN_APP}" =~ ^(backend|ui)$ ]] || { echo "::error::bad app"; exit 1; }
+          for v in "${IN_SLUG}" "${IN_NAMESPACE}" "${IN_APP_NAME}" "${IN_BACKEND_NAME}" "${IN_UI_NAME}"; do
+            [[ "${v}" =~ ${label} ]] || { echo "::error::not a DNS label: ${v}"; exit 1; }
+          done
+          [[ "${IN_NAMESPACE}" == tenant-* ]] || { echo "::error::namespace must be tenant-*"; exit 1; }
+          [[ "${IN_IMAGE}" =~ ^[A-Za-z0-9./:@_-]+$ ]] || { echo "::error::bad image ref"; exit 1; }
+
+          # backend -> tenantos-backend, ui -> tenantos-ui; both render with the nodejs schema.
+          echo "PROJECT=tenantos-${IN_APP}" >> "$GITHUB_ENV"
+          echo "SCHEMA=nodejs" >> "$GITHUB_ENV"
+
+      - name: Configure Forgejo npm registry
+        env:
+          SKAFFOLDER_FORGEJO_TOKEN: ${{ secrets.SKAFFOLDER_FORGEJO_TOKEN }}
+        run: |
+          set -euo pipefail
+          npm config set @homelab:registry "https://${NPM_REGISTRY_HOST}/api/packages/Homelab/npm/"
+          npm config set "//${NPM_REGISTRY_HOST}/api/packages/Homelab/npm/:_authToken" "${SKAFFOLDER_FORGEJO_TOKEN}"
+
+      - name: Install skaffolder
+        run: npm install -g @homelab/skaffolder
+
+      - name: Checkout skaffolder configs
+        env:
+          ACTIONS_TOKEN: ${{ secrets.ACTIONS_TOKEN }}
+        run: |
+          set -euo pipefail
+          rm -rf skaffolder-configs
+          git clone --depth 1 \
+            "https://x-access-token:${ACTIONS_TOKEN}@${REGISTRY}/${CONFIGS_REPO}" \
+            skaffolder-configs
+
+      # Only the scripts folder is needed; sparse + blob-less keeps this to a second or two.
+      - name: Checkout generator script
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: .forgejo/scripts
+          path: source
+
+      # Derives configs/v1.yml from the app's own config - see the script for what changes per
+      # tenant. js-yaml is installed outside the checkout and found through NODE_PATH.
+      - name: Generate tenant config
+        env:
+          IN_ENV: ${{ inputs.env }}
+          IN_SLUG: ${{ inputs.tenant_slug }}
+          IN_NAMESPACE: ${{ inputs.namespace }}
+          IN_APP: ${{ inputs.app }}
+          IN_APP_NAME: ${{ inputs.app_name }}
+          IN_BACKEND_NAME: ${{ inputs.backend_name }}
+          IN_UI_NAME: ${{ inputs.ui_name }}
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/yaml"
+          (cd "${RUNNER_TEMP}/yaml" && npm init -y >/dev/null && npm install js-yaml@4.1.0 >/dev/null)
+          NODE_PATH="${RUNNER_TEMP}/yaml/node_modules" node source/.forgejo/scripts/generate-tenant-config.js
+          # Holds secret key *names* (the Infisical mapping), never values, so it is safe to print.
+          cat "skaffolder-configs/configs/${TENANT_CONFIG_NAME}.yml"
+
+      - name: Generate manifests
+        env:
+          IN_ENV: ${{ inputs.env }}
+          IN_IMAGE: ${{ inputs.image }}
+        run: |
+          set -euo pipefail
+          # Read by skaffolder into the manifests' annotations and image.
+          export APP_IMAGE="${IN_IMAGE}"
+          export BRANCH_NAME="${GITHUB_REF_NAME}"
+          export REPO_NAME="${GITHUB_REPOSITORY#*/}"
+          export COMMIT_SHA="${GITHUB_SHA}"
+          export SHORT_SHA="${GITHUB_SHA::7}"
+          export REPO_COMMIT_REF="https://${REGISTRY}/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}"
+          skaffolder init --name "${TENANT_CONFIG_NAME}" --env "${IN_ENV}" --schema "${SCHEMA}" \
+            --schemas-dir skaffolder-configs/schemas \
+            --configs-dir skaffolder-configs/configs \
+            --output-dir output
+          ls output output/manifests
+
+      - name: Install skaffold
+        run: |
+          set -euo pipefail
+          curl -Lo skaffold https://storage.googleapis.com/skaffold/releases/latest/skaffold-linux-amd64
+          sudo install skaffold /usr/local/bin/
+          skaffold version
+
+      - name: Render manifest with skaffold
+        env:
+          IN_ENV: ${{ inputs.env }}
+          IN_NAMESPACE: ${{ inputs.namespace }}
+        run: |
+          set -euo pipefail
+          skaffold render --offline --profile="${IN_ENV}" --namespace "${IN_NAMESPACE}" \
+            --output output/manifest.yaml --filename=output/skaffold.yaml
+
+      - name: Set up kubectl
+        run: |
+          set -euo pipefail
+          KUBECTL_VERSION="$(curl -fsSL https://dl.k8s.io/release/stable.txt)"
+          mkdir -p "${RUNNER_TEMP}/bin"
+          curl -fsSL -o "${RUNNER_TEMP}/bin/kubectl" \
+            "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
+          chmod +x "${RUNNER_TEMP}/bin/kubectl"
+          echo "${RUNNER_TEMP}/bin" >> "$GITHUB_PATH"
+
+      - name: Configure kubeconfig
+        env:
+          KUBECONFIG_B64: ${{ secrets.KUBECONFIG_B64 }}
+        run: |
+          set -euo pipefail
+          if [ -z "${KUBECONFIG_B64}" ]; then
+            echo "::error::KUBECONFIG_B64 secret is not set"
+            exit 1
+          fi
+          mkdir -p "$HOME/.kube"
+          B64="$(printf '%s' "${KUBECONFIG_B64}" | tr -d ' \t\r\n')"
+          MOD=$(( ${#B64} % 4 ))
+          if [ "$MOD" -ne 0 ]; then
+            B64="${B64}$(printf '=%.0s' $(seq 1 $((4 - MOD))))"
+          fi
+          printf '%s' "$B64" | base64 -d --ignore-garbage > "$HOME/.kube/config"
+          chmod 600 "$HOME/.kube/config"
+
+      # The templates give every Deployment imagePullSecrets: forgejo-registry, and the registrar
+      # creates the namespace empty - without this the pods sit in ImagePullBackOff. Copied from
+      # the platform namespace so there is one credential to rotate, not one per tenant.
+      - name: Copy registry pull secret into the tenant namespace
+        env:
+          IN_NAMESPACE: ${{ inputs.namespace }}
+        run: |
+          set -euo pipefail
+          kubectl get secret "${PULL_SECRET_NAME}" -n "${PLATFORM_NAMESPACE}" -o json \
+            | python3 -c '
+          import json, sys
+          s = json.load(sys.stdin)
+          s["metadata"] = {"name": s["metadata"]["name"], "namespace": sys.argv[1]}
+          json.dump(s, sys.stdout)
+          ' "${IN_NAMESPACE}" \
+            | kubectl apply -f -
+
+      - name: Apply manifest with skaffold
+        env:
+          IN_ENV: ${{ inputs.env }}
+          IN_NAMESPACE: ${{ inputs.namespace }}
+        run: |
+          set -euo pipefail
+          skaffold apply --kubeconfig="$HOME/.kube/config" \
+            --profile="${IN_ENV}" --namespace "${IN_NAMESPACE}" \
+            --filename=output/skaffold.yaml output/manifest.yaml
+
+      # Fail the run if the rollout does not finish, so a broken tenant deploy is visible in CI as
+      # well as through the registrar's own wait.
+      - name: Wait for rollout
+        env:
+          IN_NAMESPACE: ${{ inputs.namespace }}
+          IN_APP_NAME: ${{ inputs.app_name }}
+        run: |
+          set -euo pipefail
+          kubectl rollout status "deployment/${IN_APP_NAME}" -n "${IN_NAMESPACE}" --timeout=180s

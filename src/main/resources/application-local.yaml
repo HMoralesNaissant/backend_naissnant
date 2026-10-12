@@ -73,6 +73,17 @@ tenant:
       name-prefix: tenantos/tenant
       kubernetes-name: tenant-db-credentials
 
+infisical:
+  enabled: true
+  api-url: https://infisical.home.capilabs.dev
+  client-id: 06e796ca-ae3d-4e18-ab7f-844bb0f1befa
+  client-secret: 8d7efb11d9494675ac2167213aac9b8d760050281dd19f1ba4dca57fd0bc027f
+  project-id: 8f50117c-17e1-46fc-a633-d410c3b83258
+  environments: dev,staging,prod
+  secrets:
+    placeholder: ${INFISICAL_SECRET_PLACEHOLDER:CHANGE_ME}
+    backend-keys: ${INFISICAL_BACKEND_SECRET_KEYS:DB_URL,DB_USER,DB_PASSWORD,JWT_SECRET}
+
 #logging:
 #  level:
 #    com.tenantos.registrar: TRACE

@@ -10,6 +10,8 @@
 #   NamespaceProvisioner  - get + create `namespaces` (cluster-scoped; there is no namespaced form)
 #   TenantSecretWriter    - serverSideApply a Secret into each tenant namespace, which is a PATCH
 #                           (and a create the first time), plus a get
+#   TenantAppDeployer     - get `deployments` in each tenant namespace, to confirm the apps the
+#                           tenant-deploy workflow rolled out are available
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -40,6 +42,16 @@ rules:
     resources: ["secrets"]
     verbs: ["create"]
 ---
+# Read-only, get only: the registrar never lists or changes workloads - CI deploys them.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: tenantos-registrar-tenant-deployments
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get"]
+---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
@@ -61,6 +73,19 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
   name: tenantos-registrar-tenant-secrets
+subjects:
+  - kind: ServiceAccount
+    name: tenantos-registrar
+    namespace: tenant-apps-dev
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: tenantos-registrar-tenant-deployments
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: tenantos-registrar-tenant-deployments
 subjects:
   - kind: ServiceAccount
     name: tenantos-registrar

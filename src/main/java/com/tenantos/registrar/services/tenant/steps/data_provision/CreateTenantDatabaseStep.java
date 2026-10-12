@@ -14,6 +14,7 @@ import com.tenantos.registrar.repository.TenantRepository;
 import com.tenantos.registrar.repository.TenantsRegistrationRepository;
 import com.tenantos.registrar.repository.UserRepository;
 import com.tenantos.registrar.entity.User;
+import com.tenantos.registrar.services.infisical.TenantInfisicalSecretWriter;
 import com.tenantos.registrar.services.kubernetes.TenantSecretWriter;
 import com.tenantos.registrar.services.database.ProvisionedTenantDatabase;
 import com.tenantos.registrar.services.database.TenantDatabaseProvisioner;
@@ -61,6 +62,7 @@ public class CreateTenantDatabaseStep implements TenantProvisioningStep {
   private final TenantDatabaseProvisioner tenantDatabaseProvisioner;
   private final TenantSchemaMigrator tenantSchemaMigrator;
   private final TenantSecretWriter tenantSecretWriter;
+  private final TenantInfisicalSecretWriter tenantInfisicalSecretWriter;
   private final TenantWorkspaceProvisioningStore store;
 
   @Override
@@ -117,6 +119,7 @@ public class CreateTenantDatabaseStep implements TenantProvisioningStep {
     tenantSchemaMigrator.migrate(provisioned, user, tenant);
 
     ProvisionedSecret secret = tenantSecretWriter.write(tenant, provisioned);
+    tenantInfisicalSecretWriter.write(tenant, provisioned);
 
     // Loaded before writing rather than rebuilt: saving a freshly built entity merges over the
     // stored row and carries the new instance's created_at with it, losing the first provision's

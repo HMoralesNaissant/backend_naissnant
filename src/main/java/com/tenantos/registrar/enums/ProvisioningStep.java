@@ -23,6 +23,12 @@ public enum ProvisioningStep {
   // confirmation, because a tenant should not be told their workspace is ready while it has
   // nowhere to store data.
   CREATE_TENANT_DATABASE,
+  // After the database so the secrets it publishes can be mirrored here later; before the
+  // confirmation so the tenant is not told they are ready while their config has no home.
+  // Deployed after the database and its secrets exist, because the apps read both on startup.
+  DISPATCH_TENANT_DEPLOY,
+  // Separate from the dispatch so a slow rollout retries only the wait, not a second dispatch.
+  AWAIT_TENANT_DEPLOY,
   SEND_CONFIRMATION,
   COMPLETED;
 

@@ -117,6 +117,31 @@ tenant:
       kubernetes-enabled: ${TENANT_DB_K8S_SECRET_ENABLED:false}
       name-prefix: ${TENANT_DB_SECRET_PREFIX}
       kubernetes-name: ${TENANT_DB_K8S_SECRET_NAME}
+  #PER-TENANT APP DEPLOYMENT (DISPATCH_TENANT_DEPLOY / AWAIT_TENANT_DEPLOY steps)
+  deploy:
+    # Off by default: both steps log and advance instead of dead-lettering every tenant in an
+    # environment with no Forgejo wired up.
+    enabled: ${TENANT_DEPLOY_ENABLED:false}
+    # Which skaffolder environment (dev, staging, prod) tenant apps are rendered for.
+    environment: ${TENANT_DEPLOY_ENV:dev}
+    # Full image refs deployed for every new tenant. Pin these to the tag promoted for the
+    # environment; a mutable tag like :latest makes a tenant's first deploy non-reproducible.
+    backend-image: ${TENANT_DEPLOY_BACKEND_IMAGE:}
+    ui-image: ${TENANT_DEPLOY_UI_IMAGE:}
+    # Shared Redis for tenant backends, mirrored into each tenant's Infisical folder. Blank skips it.
+    redis-url: ${TENANT_DEPLOY_REDIS_URL:}
+    # Must stay well under workspace.provisioning.lease-seconds, or another worker re-claims the
+    # job while this one is still waiting.
+    await-timeout-seconds: ${TENANT_DEPLOY_AWAIT_TIMEOUT_SECONDS:240}
+    poll-interval-seconds: ${TENANT_DEPLOY_POLL_INTERVAL_SECONDS:5}
+    forgejo:
+      api-url: ${FORGEJO_API_URL:}
+      # Needs write access to Actions on the repository below.
+      token: ${FORGEJO_DISPATCH_TOKEN:}
+      # The repository holding .forgejo/workflows/tenant-deploy_v1.yml.
+      repository: ${TENANT_DEPLOY_REPOSITORY:Homelab/tenantos-registrar}
+      workflow: ${TENANT_DEPLOY_WORKFLOW:tenant-deploy_v1.yml}
+      ref: ${TENANT_DEPLOY_REF:main}
   auth:
     # Short-lived by design: the access token cannot be revoked once signed, so its blast radius
     # is bounded by its lifetime. Revocation works through the session row the token names.
@@ -124,6 +149,25 @@ tenant:
     refresh-token-ttl-seconds: ${TENANT_REFRESH_TOKEN_TTL_SECONDS:2592000}
     session-ttl-seconds: ${TENANT_SESSION_TTL_SECONDS:2592000}
     refresh-cookie-name: ${TENANT_REFRESH_COOKIE_NAME:tenant_refresh_token}
+
+#INFISICAL (PROVISION_INFISICAL_SECRETS step)
+infisical:
+  # Off by default: with no Infisical configured the step logs and advances instead of
+  # dead-lettering every tenant.
+  enabled: ${INFISICAL_ENABLED:false}
+  api-url: ${INFISICAL_API_URL:}
+  # Universal Auth machine identity. Needs create on folders and secrets in the project.
+  client-id: ${INFISICAL_CLIENT_ID:}
+  client-secret: ${INFISICAL_CLIENT_SECRET:}
+  project-id: ${INFISICAL_PROJECT_ID:}
+  # Every environment listed gets the same folders and secrets.
+  environments: ${INFISICAL_ENVIRONMENTS:dev,staging,prod}
+  # Each tenant gets /<slug>/backend. The database step writes TENANT_* there; this step seeds the
+  # extra keys below (comma-separated) for a person to fill in.
+  # Created only when missing and never overwritten, so values filled in later survive retries.
+  secrets:
+    placeholder: ${INFISICAL_SECRET_PLACEHOLDER:CHANGE_ME}
+    backend-keys: ${INFISICAL_BACKEND_SECRET_KEYS:JWT_SECRET}
 
 logging:
   level:
