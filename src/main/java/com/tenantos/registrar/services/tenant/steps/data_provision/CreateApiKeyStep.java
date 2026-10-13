@@ -1,6 +1,9 @@
 package com.tenantos.registrar.services.tenant.steps.data_provision;
 
 import com.tenantos.registrar.entity.ApiKey;
+import com.tenantos.registrar.entity.Tenant;
+import com.tenantos.registrar.repository.TenantRepository;
+import com.tenantos.registrar.services.infisical.TenantInfisicalSecretWriter;
 import com.tenantos.registrar.entity.AuditLog;
 import com.tenantos.registrar.entity.TenantWorkspaceProvisioning;
 import com.tenantos.registrar.entity.TenantsRegistration;
@@ -21,8 +24,9 @@ import java.util.UUID;
  * Step 5: mint the tenant's bootstrap API key.
  *
  * <p>This is an <em>internal</em> service credential, not a user-facing one, and its plaintext is
- * deliberately discarded the moment it has been hashed. A background job has no caller to hand a
- * secret back to, and neither of the channels that exist here is fit to carry one: the confirmation
+ * discarded once hashed - except for one hand-off: when Infisical is enabled it is written to the
+ * tenant's app folders so the deployed containers can read it. A background job has no caller to
+ * hand a secret back to, and neither of the other channels is fit to carry one: the confirmation
  * email would put a live credential in a mailbox, and the provisioning status endpoint is
  * unauthenticated. User-facing key issuance belongs behind an authenticated endpoint that can
  * return the plaintext once, in the response, to a caller who has proven who they are.
@@ -41,6 +45,8 @@ public class CreateApiKeyStep extends AbstractTransactionalStep {
 
   private final ApiKeyRepository apiKeyRepository;
   private final AuditLogRepository auditLogRepository;
+  private final TenantRepository tenantRepository;
+  private final TenantInfisicalSecretWriter tenantInfisicalSecretWriter;
   private final SecureRandom secureRandom = new SecureRandom();
 
   @Override
@@ -55,8 +61,16 @@ public class CreateApiKeyStep extends AbstractTransactionalStep {
     UUID actorId = requireUserId(registration);
 
     String plaintext = KEY_PREFIX_LITERAL + randomBody();
-    // Local variable only: never logged, never returned, out of scope at the end of this method.
+    // Never logged or returned; its only exit is the Infisical write below.
     String keyHash = HashUtils.sha256Hex(plaintext);
+
+    // Handed to Infisical before the row is saved: if that fails the transaction rolls back and the
+    // retry mints a fresh key, so a stored hash never exists without a delivered key.
+    Tenant tenant =
+        tenantRepository
+            .findById(tenantId)
+            .orElseThrow(() -> new IllegalStateException("Tenant " + tenantId + " not found"));
+    tenantInfisicalSecretWriter.writeApiKey(tenant, plaintext);
 
     ApiKey apiKey =
         apiKeyRepository.save(

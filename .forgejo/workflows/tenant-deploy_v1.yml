@@ -35,6 +35,9 @@ on:
       ui_name:
         description: Resource name of the tenant's UI
         required: true
+      tenant_name:
+        description: Tenant's display name (account name), shown by the UI as TENANT_NAME
+        required: true
       image:
         description: Full image ref to deploy
         required: true
@@ -77,6 +80,7 @@ jobs:
           IN_APP_NAME: ${{ inputs.app_name }}
           IN_BACKEND_NAME: ${{ inputs.backend_name }}
           IN_UI_NAME: ${{ inputs.ui_name }}
+          IN_TENANT_NAME: ${{ inputs.tenant_name }}
           IN_IMAGE: ${{ inputs.image }}
         run: |
           set -euo pipefail
@@ -87,6 +91,9 @@ jobs:
             [[ "${v}" =~ ${label} ]] || { echo "::error::not a DNS label: ${v}"; exit 1; }
           done
           [[ "${IN_NAMESPACE}" == tenant-* ]] || { echo "::error::namespace must be tenant-*"; exit 1; }
+          # Free text, so only bounded and single-line: it reaches the app as one env value.
+          [[ -n "${IN_TENANT_NAME}" && ${#IN_TENANT_NAME} -le 200 && "${IN_TENANT_NAME}" != *$'\n'* ]] \
+            || { echo "::error::bad tenant name"; exit 1; }
           [[ "${IN_IMAGE}" =~ ^[A-Za-z0-9./:@_-]+$ ]] || { echo "::error::bad image ref"; exit 1; }
 
           # backend -> tenantos-backend, ui -> tenantos-ui; both render with the nodejs schema.
@@ -132,6 +139,7 @@ jobs:
           IN_APP_NAME: ${{ inputs.app_name }}
           IN_BACKEND_NAME: ${{ inputs.backend_name }}
           IN_UI_NAME: ${{ inputs.ui_name }}
+          IN_TENANT_NAME: ${{ inputs.tenant_name }}
         run: |
           set -euo pipefail
           mkdir -p "${RUNNER_TEMP}/yaml"
@@ -156,7 +164,8 @@ jobs:
           skaffolder init --name "${TENANT_CONFIG_NAME}" --env "${IN_ENV}" --schema "${SCHEMA}" \
             --schemas-dir skaffolder-configs/schemas \
             --configs-dir skaffolder-configs/configs \
-            --output-dir output
+            --output-dir output \
+            --v
           ls output output/manifests
 
       - name: Install skaffold

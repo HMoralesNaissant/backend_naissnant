@@ -103,6 +103,7 @@ public class TenantAppDeployer {
     // Each app needs the other's name: the UI points at the backend, the backend allows the UI.
     inputs.put("backend_name", backendName);
     inputs.put("ui_name", uiName);
+    inputs.put("tenant_name", tenant.getName());
     inputs.put("image", image);
     forgejo.dispatch(inputs);
   }

@@ -6,6 +6,7 @@ import com.tenantos.registrar.enums.ProvisioningStep;
 import com.tenantos.registrar.enums.TenantsRegistrationStatus;
 import com.tenantos.registrar.repository.TenantWorkspaceProvisioningRepository;
 import com.tenantos.registrar.services.tenant.TenantProvisioningStep;
+import org.slf4j.MDC;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -116,10 +117,13 @@ public class TenantWorkspaceProvisioningService {
     log.info("Claimed {} tenant provisioning job(s)", claimed.size());
     for (TenantWorkspaceProvisioning job : claimed) {
       // One tenant's failure must not abort the rest of the batch.
+      MDC.put(MDC_CONTEXT, context(job, null));
       try {
         provision(job);
       } catch (Exception e) {
         store.recordFailure(job.getProvisioningId(), e);
+      } finally {
+        MDC.remove(MDC_CONTEXT);
       }
     }
   }
@@ -135,6 +139,19 @@ public class TenantWorkspaceProvisioningService {
   }
 
   /**
+   * Tags every log line written while a job runs - including those from the steps, clients and
+   * stores it calls - so one tenant's provisioning can be followed with a single grep. Rendered by
+   * {@code logging.pattern.console}; see application.yaml.
+   */
+  private static final String MDC_CONTEXT = "provisioning";
+
+  private static String context(TenantWorkspaceProvisioning job, ProvisioningStep step) {
+    String id = job.getProvisioningId();
+    String shortId = id.length() > 8 ? id.substring(0, 8) : id;
+    return "[PROVISION " + shortId + (step == null ? "" : " " + step) + "]";
+  }
+
+  /**
    * Walks a claimed job from wherever it left off to COMPLETED. Each step commits before the next
    * begins, so a throw part-way leaves {@code current_step} at the failed step and the retry
    * resumes precisely there.
@@ -144,6 +161,7 @@ public class TenantWorkspaceProvisioningService {
 
     while (current.getCurrentStep() != ProvisioningStep.COMPLETED) {
       ProvisioningStep step = current.getCurrentStep();
+      MDC.put(MDC_CONTEXT, context(current, step));
       log.debug("Running step {} for {}", step, current.getCompanyEmail());
 
       steps.get(step).execute(current);

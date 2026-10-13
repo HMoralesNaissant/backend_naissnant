@@ -32,10 +32,10 @@ import org.springframework.web.filter.CorsFilter;
  * Security configuration — CSRF is disabled; adds rate limiting and two independent authentication
  * mechanisms, one per phase of the tenant lifecycle.
  *
- * <p>Everything under /onboarding/** requires ROLE_ONBOARDING, granted by
- * {@link OnboardingTokenAuthenticationFilter} from the preflight token cookie (httpOnly,
- * SameSite=Lax) rather than a CSRF token. That cookie is consumed by registration, so it does not
- * survive into the authenticated phase.
+ * <p>Everything under /onboarding/** requires ROLE_ONBOARDING, granted by {@link
+ * OnboardingTokenAuthenticationFilter} from the preflight token cookie (httpOnly, SameSite=Lax)
+ * rather than a CSRF token. That cookie is consumed by registration, so it does not survive into
+ * the authenticated phase.
  *
  * <p>Everything else is gated by {@link TenantJwtAuthenticationFilter}, which validates the bearer
  * access token issued by /tenant-auth/login and grants the tenant roles the token carries.
@@ -108,7 +108,8 @@ public class SecurityConfig {
                         HttpMethod.POST,
                         "/tenant-auth/login",
                         "/tenant-auth/refresh",
-                        "/tenant-auth/logout")
+                        "/tenant-auth/logout",
+                        "/tenant-auth/validate")
                     .permitAll()
                     .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html")
                     .permitAll()
@@ -163,8 +164,7 @@ public class SecurityConfig {
               + "running more than one instance.");
       byte[] random = new byte[32];
       new java.security.SecureRandom().nextBytes(random);
-      return new JwtProvider(
-          java.util.Base64.getEncoder().encodeToString(random), jwtTtlSeconds);
+      return new JwtProvider(java.util.Base64.getEncoder().encodeToString(random), jwtTtlSeconds);
     }
     return new JwtProvider(jwtSecret, jwtTtlSeconds);
   }

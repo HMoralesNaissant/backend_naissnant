@@ -2,6 +2,10 @@ package com.tenantos.registrar.controllers;
 
 import com.tenantos.registrar.domain.request.TenantLoginRequest;
 import com.tenantos.registrar.domain.response.TenantLoginResponse;
+import com.tenantos.registrar.domain.request.TenantValidationRequest;
+import com.tenantos.registrar.domain.response.TenantValidationResponse;
+import com.tenantos.registrar.entity.ApiKey;
+import com.tenantos.registrar.services.auth.TenantApiKeyService;
 import com.tenantos.registrar.services.auth.TenantAuthService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -15,9 +19,11 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseCookie;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -31,6 +37,9 @@ import java.util.Optional;
  * <p>The access token comes back in the body for the client to send as a bearer header; the refresh
  * token only ever travels in an httpOnly cookie, so page scripts cannot read it and an XSS bug
  * cannot exfiltrate a month-long credential.
+ *
+ * <p>Also home to {@code /tenant-auth/validate}, the one endpoint here authenticated by a tenant
+ * API key instead of a user session.
  */
 @RestController
 @RequestMapping("/tenant-auth")
@@ -41,6 +50,7 @@ public class TenantAuthController {
   private String refreshCookieName;
 
   private final TenantAuthService tenantAuthService;
+  private final TenantApiKeyService tenantApiKeyService;
 
   @Operation(
       summary = "Sign in to a tenant",
@@ -97,6 +107,23 @@ public class TenantAuthController {
             .build();
 
     return ResponseEntity.noContent().header(HttpHeaders.SET_COOKIE, cleared.toString()).build();
+  }
+
+  @Operation(
+      summary = "Check that an email belongs to the calling tenant",
+      description =
+          "Authenticated by the tenant API key in the X-Tenant-Id header. Returns the tenant's slug "
+              + "when the email is an active member of the tenant that owns the key. 401 for a "
+              + "missing, unknown, revoked or expired key; 404 when the email is not a member.")
+  @PostMapping("/validate")
+  public ResponseEntity<TenantValidationResponse> valid(
+      @RequestHeader(value = "X-Tenant-Id", required = false) String apiKey,
+      @Valid @RequestBody TenantValidationRequest request) {
+    Optional<ApiKey> key = tenantApiKeyService.authenticate(apiKey);
+      return key.map(value -> tenantApiKeyService
+              .tenantSlugForMember(value, request.email())
+              .map(slug -> ResponseEntity.ok(new TenantValidationResponse(slug)))
+              .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND).build())).orElseGet(() -> ResponseEntity.status(HttpStatus.UNAUTHORIZED).build());
   }
 
   private ResponseEntity<TenantLoginResponse> respond(

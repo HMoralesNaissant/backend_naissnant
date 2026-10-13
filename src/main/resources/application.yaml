@@ -171,6 +171,10 @@ infisical:
     backend-keys: ${INFISICAL_BACKEND_SECRET_KEYS:JWT_SECRET}
 
 logging:
+  pattern:
+    # Spring Boot's default console pattern plus %X{provisioning}: lines written while a tenant
+    # provisioning job runs carry "[PROVISION <job> <STEP>]", other lines leave it blank.
+    console: "%clr(%d{HH:mm:ss.SSS}){faint} %clr(%5p) %clr(%X{provisioning:-}){magenta} %clr(%-28.28logger{27}){cyan} %clr(:){faint} %m%n%wEx"
   level:
     # Everything this service logs itself: onboarding funnel, provisioning pipeline, tenant auth.
     # All levels are env-overridable so deployed environments can dial them back without editing
@@ -193,7 +197,7 @@ security:
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS}
     allowed-methods: ${CORS_ALLOWED_METHODS:GET,POST,PUT,DELETE,OPTIONS}
-    allowed-headers: ${CORS_ALLOWED_HEADERS:Authorization,Content-Type}
+    allowed-headers: ${CORS_ALLOWED_HEADERS:Authorization,Content-Type,X-Tenant-Id}
     max-age: ${CORS_MAX_AGE:3600}
     allow-credentials: ${CORS_ALLOW_CREDENTIALS:true}
 

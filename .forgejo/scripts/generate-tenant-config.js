@@ -23,6 +23,7 @@ const REQUIRED = [
   "IN_APP_NAME",
   "IN_BACKEND_NAME",
   "IN_UI_NAME",
+  "IN_TENANT_NAME",
 ];
 
 /** Returns a copy of the app's config, specialised for one tenant. */
@@ -37,6 +38,12 @@ function buildTenantConfig(cfg, platform, e) {
   out.defaults ??= {};
   out.defaults.name = e.IN_APP_NAME;
   out.defaults.description = `${out.defaults.description ?? e.PROJECT} (${e.IN_SLUG})`;
+  // The tenant's bootstrap API key, written to /<slug>/backend and /<slug>/ui by CREATE_API_KEY.
+  // Reaches the container as a Secret-backed env var, never as a plain value in the manifest.
+  out.defaults.secrets = {
+    ...(out.defaults.secrets ?? {}),
+    TENANT_API_KEY: "TENANT_OS_API_KEY",
+  };
   out.defaults.infisical = {
     ...(out.defaults.infisical ?? {}),
     secret_path: `/${e.IN_SLUG}/${e.IN_APP}`,
@@ -52,6 +59,10 @@ function buildTenantConfig(cfg, platform, e) {
     envCfg.env_variables.REDIS_KEY_PREFIX = `tenantos:${e.IN_ENV}:${e.IN_SLUG}`;
   } else {
     envCfg.env_variables.TENANT_BACKEND_URL = host(e.IN_BACKEND_NAME);
+    // The UI image is shared with the platform's own instance, where these default to
+    // IS_TENANT=false / TENANT_NAME=tenantos.
+    envCfg.env_variables.IS_TENANT = true;
+    envCfg.env_variables.TENANT_NAME = e.IN_TENANT_NAME;
   }
   return out;
 }

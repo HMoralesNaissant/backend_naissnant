@@ -38,6 +38,7 @@ public class TenantInfisicalSecretWriter {
   private static final String JWT_ACCESS_KEY = "TENANT_OS_JWT_ACCESS_SECRET";
   private static final String JWT_REFRESH_KEY = "TENANT_OS_JWT_REFRESH_SECRET";
   private static final int JWT_SECRET_BYTES = 48;
+  private static final String API_KEY = "TENANT_OS_API_KEY";
 
   private final SecureRandom secureRandom = new SecureRandom();
 
@@ -69,18 +70,35 @@ public class TenantInfisicalSecretWriter {
       values.put("TENANT_OS_REDIS_URL", redisUrl);
     }
 
+    // Regenerated if this step is retried; harmless, as the apps are deployed after it.
+    values.put(JWT_ACCESS_KEY, randomSecret());
+    values.put(JWT_REFRESH_KEY, randomSecret());
+
     String path = "/" + tenant.getSlug() + "/backend";
     infisicalClient.ensureFolder(path);
     infisicalClient.upsertSecrets(path, values);
-    // One call per key: createMissingSecrets writes a single value for every key it is given, and
-    // the two signing secrets must differ.
-    infisicalClient.createMissingSecrets(path, List.of(JWT_ACCESS_KEY), randomSecret());
-    infisicalClient.createMissingSecrets(path, List.of(JWT_REFRESH_KEY), randomSecret());
 
     // The UI maps no secrets, but skaffolder still reads its folder whenever Infisical credentials
     // are present, and a folder that does not exist fails the render.
     infisicalClient.ensureFolder("/" + tenant.getSlug() + "/ui");
     log.info("Published database credential to Infisical {} for tenant {}", path, tenant.getId());
+  }
+
+  /**
+   * Publishes the tenant's bootstrap API key to both apps' folders. The registrar keeps only its
+   * hash, so this is the one moment the plaintext can be handed on; skaffolder maps it into each
+   * container as an env var from there. A no-op while Infisical is disabled.
+   */
+  public void writeApiKey(Tenant tenant, String plaintext) {
+    if (!enabled) {
+      return;
+    }
+    for (String app : List.of("backend", "ui")) {
+      String path = "/" + tenant.getSlug() + "/" + app;
+      infisicalClient.ensureFolder(path);
+      infisicalClient.upsertSecrets(path, Map.of(API_KEY, plaintext));
+    }
+    log.info("Published API key to Infisical for tenant {}", tenant.getId());
   }
 
   /** What Prisma and the backend's own DATABASE_URL expect; credentials are percent-encoded. */

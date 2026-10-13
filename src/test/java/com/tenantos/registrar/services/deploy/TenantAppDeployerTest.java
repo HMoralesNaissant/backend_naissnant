@@ -60,6 +60,7 @@ class TenantAppDeployerTest {
     ReflectionTestUtils.setField(deployer, "uiImage", "reg/ui:1");
     Tenant tenant = new Tenant();
     tenant.setSlug("acme");
+    tenant.setName("Acme Inc");
 
     deployer.requestDeploy(tenant, "tenant-acme");
 
@@ -76,6 +77,7 @@ class TenantAppDeployerTest {
         .containsEntry("app", "ui")
         .containsEntry("app_name", "acme-ui")
         .containsEntry("backend_name", "acme-backend")
+        .containsEntry("tenant_name", "Acme Inc")
         .containsEntry("image", "reg/ui:1");
   }
 

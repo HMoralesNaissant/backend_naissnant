@@ -47,6 +47,10 @@ public class Tenant extends BaseAuditFields {
   @Column(name = "slug", length = 63, nullable = false, unique = true)
   private String slug;
 
+  /** The user who registered the tenant. Null only for rows older than V10 with no matching user. */
+  @Column(name = "user_id")
+  private UUID userId;
+
   @Enumerated(EnumType.STRING)
   @Column(name = "status", length = 20, nullable = false)
   @Default

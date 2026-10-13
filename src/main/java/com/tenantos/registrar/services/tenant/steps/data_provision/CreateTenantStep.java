@@ -12,6 +12,7 @@ import com.tenantos.registrar.repository.TenantRepository;
 import com.tenantos.registrar.repository.TenantSettingsRepository;
 import com.tenantos.registrar.services.tenant.AbstractTransactionalStep;
 import com.tenantos.registrar.services.tenant.TenantSlugGenerator;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -49,12 +50,15 @@ public class CreateTenantStep extends AbstractTransactionalStep {
             ? registration.getCompanyEmail()
             : registration.getAccountName();
 
+    UUID userId = requireUserId(registration);
+
     Tenant tenant =
         tenantRepository.save(
             Tenant.builder()
                 .name(name)
                 .slug(slugGenerator.generate(registration.getAccountName(), registration.getCompanyEmail()))
                 .plan(defaultPlan)
+                .userId(userId)
                 .build());
 
     tenantSettingsRepository.save(TenantSettings.builder().tenantId(tenant.getId()).build());
@@ -65,7 +69,7 @@ public class CreateTenantStep extends AbstractTransactionalStep {
     auditLogRepository.save(
         AuditLog.builder()
             .tenantId(tenant.getId())
-            .actorUserId(requireUserId(registration))
+            .actorUserId(userId)
             .eventType(AuditEventType.TENANT_CREATED)
             .resourceType("tenant")
             .resourceId(String.valueOf(tenant.getId()))

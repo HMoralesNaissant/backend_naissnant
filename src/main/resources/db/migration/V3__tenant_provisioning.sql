@@ -49,6 +49,7 @@ ON CONFLICT (email) DO NOTHING;
 CREATE TABLE tenants
 (
     id         UUID PRIMARY KEY   DEFAULT gen_random_uuid(),
+    user_id    UUID REFERENCES users (id) ON DELETE SET NULL,
     name       VARCHAR(200) NOT NULL,
     slug       VARCHAR(63)  NOT NULL UNIQUE,
     status     VARCHAR(20)  NOT NULL DEFAULT 'ACTIVE'
@@ -60,6 +61,9 @@ CREATE TABLE tenants
     created_at TIMESTAMP    NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMP NULL
 );
+
+CREATE INDEX idx_tenants_user ON tenants (user_id);
+
 
 -- 1:1 with tenants, split off because settings are read-modify-write per tenant while the
 -- tenants row itself is near-immutable. PK = tenant_id makes the provisioning step that creates
