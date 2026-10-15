@@ -51,8 +51,7 @@ spring:
 fe:
   onboarding:
     otp-from-address: no-reply@tenantos.local
-    verify-url-template: http://localhost:3000/onboarding/verify?email={email}&vrfk={vrfk}
-    login-url: http://localhost:3000/login
+    fe-app-url: http://localhost:3000
 
 #BACKGROUND TENANT WORKSPACE PROVISIONING
 workspace:

@@ -48,11 +48,8 @@ public class OnboardingEmailService {
     @Value("${fe.onboarding.otp-from-address:no-reply@tenantos.local}")
     private String fromAddress;
 
-    @Value("${fe.onboarding.verify-url-template}")
-    private String verifyUrlTemplate;
-
-    @Value("${fe.onboarding.login-url}")
-    private String loginUrl;
+    @Value("${fe.onboarding.fe-app-url}")
+    private String feAppUrl;
 
     private final OnboardingOtpRepository repository;
     private final JavaMailSender mailSender;
@@ -113,9 +110,15 @@ public class OnboardingEmailService {
 
     private String buildVerifyUrl(OnboardingOtp otp) {
         String encodedEmail = URLEncoder.encode(otp.getCompanyEmail(), StandardCharsets.UTF_8);
-        return verifyUrlTemplate
-                .replace("{vrfk}", otp.getOtpId())
-                .replace("{email}", encodedEmail);
+        return feUrl("/onboarding/verify") + "?email=" + encodedEmail + "&vrfk=" + otp.getOtpId();
+    }
+
+    private String loginUrl() {
+        return feUrl("/login");
+    }
+
+    private String feUrl(String path) {
+        return feAppUrl.replaceAll("/+$", "") + path;
     }
 
     /**
@@ -179,7 +182,7 @@ public class OnboardingEmailService {
     public void sendAccountRegistrationConfirmation(TenantsRegistration registration) {
         try {
             String htmlBody = renderAccountRegistrationConfirmationHtml(registration.getCompanyEmail());
-            String plainTextBody = "Your tenantOS workspace is ready. Sign in at " + loginUrl + ".";
+            String plainTextBody = "Your tenantOS workspace is ready. Sign in at " + loginUrl() + ".";
 
             MimeMessage mimeMessage = mailSender.createMimeMessage();
             MimeMessageHelper helper = new MimeMessageHelper(mimeMessage, true, "UTF-8");
@@ -199,7 +202,7 @@ public class OnboardingEmailService {
     private String renderAccountRegistrationConfirmationHtml(String companyEmail) {
         Context context = new Context();
         context.setVariable("companyEmail", companyEmail);
-        context.setVariable("loginUrl", loginUrl);
+        context.setVariable("loginUrl", loginUrl());
         return templateEngine.process(ACCOUNT_REGISTRATION_CONFIRMATION_TEMPLATE_NAME, context);
     }
 }

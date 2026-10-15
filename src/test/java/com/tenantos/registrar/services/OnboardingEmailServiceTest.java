@@ -37,8 +37,7 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class OnboardingEmailServiceTest {
 
-  private static final String VERIFY_URL_TEMPLATE =
-      "http://localhost:3000/onboarding/verify?email={email}&vftk={vftk}";
+  private static final String FE_APP_URL = "http://localhost:3000/";
 
   @Mock private OnboardingOtpRepository repository;
   @Mock private JavaMailSender mailSender;
@@ -50,7 +49,7 @@ class OnboardingEmailServiceTest {
   void setUp() {
     ReflectionTestUtils.setField(service, "ttlSeconds", 600L);
     ReflectionTestUtils.setField(service, "fromAddress", "no-reply@tenantos.local");
-    ReflectionTestUtils.setField(service, "verifyUrlTemplate", VERIFY_URL_TEMPLATE);
+    ReflectionTestUtils.setField(service, "feAppUrl", FE_APP_URL);
   }
 
   private static MimeMessage newMimeMessage() {
@@ -96,7 +95,7 @@ class OnboardingEmailServiceTest {
     String verifyUrl = (String) contextCaptor.getValue().getVariable("verifyUrl");
     assertThat(verifyUrl)
         .isEqualTo(
-            "http://localhost:3000/onboarding/verify?email=a%40example.com&vftk="
+            "http://localhost:3000/onboarding/verify?email=a%40example.com&vrfk="
                 + savedOtp.getOtpId());
   }
 
