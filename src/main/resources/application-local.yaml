@@ -75,9 +75,9 @@ tenant:
 
   deployment:
     enabled: true
-    environment: dev
-    backend-image: forgejo.home.capilabs.dev/homelab/tenantos-backend:latest
-    ui-image: forgejo.home.capilabs.dev/homelab/tenantos-ui:latest
+    environment: prod
+    backend-image: forgejo.home.capilabs.dev/homelab/tenantos-backend:20261003t050507-ebec40116628
+    ui-image: forgejo.home.capilabs.dev/homelab/tenantos-ui:20261013t041258-5e00d4a378e0
     redis-url: redis://:redis%40P%40ssw0rds@192.168.40.11:6380
     # Must stay well under workspace.provisioning.lease-seconds, or another worker re-claims the
     # job while this one is still waiting.
@@ -99,9 +99,6 @@ infisical:
   client-secret: 8d7efb11d9494675ac2167213aac9b8d760050281dd19f1ba4dca57fd0bc027f
   project-id: 8f50117c-17e1-46fc-a633-d410c3b83258
   environments: dev,staging,prod
-  secrets:
-    placeholder: ${INFISICAL_SECRET_PLACEHOLDER:CHANGE_ME}
-    backend-keys: ${INFISICAL_BACKEND_SECRET_KEYS:DB_URL,DB_USER,DB_PASSWORD,JWT_SECRET}
 
 admin:
   api-token: Cn70ElojCODN6RiIsFVudzFbv3OB*BXmUK907EtO

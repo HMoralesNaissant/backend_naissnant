@@ -163,12 +163,6 @@ infisical:
   project-id: ${INFISICAL_PROJECT_ID:}
   # Every environment listed gets the same folders and secrets.
   environments: ${INFISICAL_ENVIRONMENTS:dev,staging,prod}
-  # Each tenant gets /<slug>/backend. The database step writes TENANT_* there; this step seeds the
-  # extra keys below (comma-separated) for a person to fill in.
-  # Created only when missing and never overwritten, so values filled in later survive retries.
-  secrets:
-    placeholder: ${INFISICAL_SECRET_PLACEHOLDER:CHANGE_ME}
-    backend-keys: ${INFISICAL_BACKEND_SECRET_KEYS:JWT_SECRET}
 
 logging:
   pattern:
