@@ -60,4 +60,23 @@ public class TenantApiKeyService {
         .flatMap(member -> tenantRepository.findById(key.getTenantId()))
         .map(Tenant::getSlug);
   }
+
+  /**
+   * Temporary, key-less variant of {@link #tenantSlugForMember}: the slug of an active tenant the
+   * email belongs to. A user in several tenants gets the first one found.
+   */
+  @Transactional(readOnly = true)
+  public Optional<String> tenantSlugForEmail(String email) {
+    return userRepository
+        .findByEmail(email.trim())
+        .flatMap(
+            user ->
+                tenantMemberRepository
+                    .findByUserIdAndStatus(user.getId(), MembershipStatus.ACTIVE)
+                    .stream()
+                    .map(member -> tenantRepository.findById(member.getTenantId()))
+                    .flatMap(Optional::stream)
+                    .map(Tenant::getSlug)
+                    .findFirst());
+  }
 }

@@ -4,7 +4,6 @@ import com.tenantos.registrar.domain.request.TenantLoginRequest;
 import com.tenantos.registrar.domain.response.TenantLoginResponse;
 import com.tenantos.registrar.domain.request.TenantValidationRequest;
 import com.tenantos.registrar.domain.response.TenantValidationResponse;
-import com.tenantos.registrar.entity.ApiKey;
 import com.tenantos.registrar.services.auth.TenantApiKeyService;
 import com.tenantos.registrar.services.auth.TenantAuthService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -23,7 +22,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -110,20 +108,19 @@ public class TenantAuthController {
   }
 
   @Operation(
-      summary = "Check that an email belongs to the calling tenant",
+      summary = "Look up the tenant an email belongs to",
       description =
-          "Authenticated by the tenant API key in the X-Tenant-Id header. Returns the tenant's slug "
-              + "when the email is an active member of the tenant that owns the key. 401 for a "
-              + "missing, unknown, revoked or expired key; 404 when the email is not a member.")
+          "Returns the slug of the tenant the email is an active member of. For now the caller is "
+              + "not authenticated (the X-Tenant-Id API key is not sent) - the tenant is resolved "
+              + "from the email in the body alone. 404 when the email is not an active member of "
+              + "any tenant.")
   @PostMapping("/validate")
   public ResponseEntity<TenantValidationResponse> valid(
-      @RequestHeader(value = "X-Tenant-Id", required = false) String apiKey,
       @Valid @RequestBody TenantValidationRequest request) {
-    Optional<ApiKey> key = tenantApiKeyService.authenticate(apiKey);
-      return key.map(value -> tenantApiKeyService
-              .tenantSlugForMember(value, request.email())
-              .map(slug -> ResponseEntity.ok(new TenantValidationResponse(slug)))
-              .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND).build())).orElseGet(() -> ResponseEntity.status(HttpStatus.UNAUTHORIZED).build());
+    return tenantApiKeyService
+        .tenantSlugForEmail(request.email())
+        .map(slug -> ResponseEntity.ok(new TenantValidationResponse(slug)))
+        .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND).build());
   }
 
   private ResponseEntity<TenantLoginResponse> respond(
