@@ -98,7 +98,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: Homelab/ci-actions
-          ref: v1
+          ref: v2
           token: ${{ secrets.ACTIONS_TOKEN }}
           path: ci-actions
           persist-credentials: false
@@ -114,8 +114,15 @@ jobs:
           configs-repo: ${{ env.CONFIGS_REPO }}
           configs-token: ${{ secrets.ACTIONS_TOKEN }}
 
-      - name: Render manifests
-        run: bash source/.forgejo/scripts/generate-manifests.sh
+      - name: Generate tenant config
+        run: bash source/.forgejo/scripts/generate-tenant-config.sh
+
+      - uses: ./ci-actions/render-manifests
+        with:
+          name: ${{ env.TENANT_CONFIG_NAME }}
+          env: ${{ inputs.env }}
+          schema: ${{ env.SCHEMA }}
+          namespace: ${{ inputs.namespace }}
 
       - uses: ./ci-actions/setup-kubeconfig
         with:
