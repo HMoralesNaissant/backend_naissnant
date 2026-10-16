@@ -152,7 +152,18 @@ jobs:
           git -C source checkout --detach "${COMMIT_SHA}"
           ls source/k8s
 
-      - uses: https://forgejo.home.capilabs.dev/Homelab/ci-actions/setup-skaffolder@v1
+      # ci-actions is private, which the runner cannot clone on its own, so it is checked out with a
+      # token and used as local actions. Pinned to a tag.
+      - name: Checkout shared actions
+        uses: actions/checkout@v4
+        with:
+          repository: Homelab/ci-actions
+          ref: v1
+          token: ${{ secrets.ACTIONS_TOKEN }}
+          path: ci-actions
+          persist-credentials: false
+
+      - uses: ./ci-actions/setup-skaffolder
         with:
           npm-registry-host: ${{ vars.NPM_REGISTRY_HOST }}
           npm-token: ${{ secrets.SKAFFOLDER_FORGEJO_TOKEN }}
@@ -170,7 +181,7 @@ jobs:
             --v
           ls ./output ./output/manifests
 
-      - uses: https://forgejo.home.capilabs.dev/Homelab/ci-actions/setup-skaffold@v1
+      - uses: ./ci-actions/setup-skaffold
 
       - name: Render manifest with skaffold
         run: |
@@ -223,11 +234,22 @@ jobs:
           rm bundle.enc
           ls manifest.yaml skaffold.yaml k8s/rbac.yaml
 
-      - uses: https://forgejo.home.capilabs.dev/Homelab/ci-actions/setup-skaffold@v1
+      # ci-actions is private, which the runner cannot clone on its own, so it is checked out with a
+      # token and used as local actions. Pinned to a tag.
+      - name: Checkout shared actions
+        uses: actions/checkout@v4
+        with:
+          repository: Homelab/ci-actions
+          ref: v1
+          token: ${{ secrets.ACTIONS_TOKEN }}
+          path: ci-actions
+          persist-credentials: false
 
-      - uses: https://forgejo.home.capilabs.dev/Homelab/ci-actions/setup-kubectl@v1
+      - uses: ./ci-actions/setup-skaffold
 
-      - uses: https://forgejo.home.capilabs.dev/Homelab/ci-actions/setup-kubeconfig@v1
+      - uses: ./ci-actions/setup-kubectl
+
+      - uses: ./ci-actions/setup-kubeconfig
         with:
           kubeconfig-b64: ${{ secrets.KUBECONFIG_B64 }}
 

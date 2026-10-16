@@ -92,10 +92,21 @@ jobs:
       - name: Validate inputs
         run: bash source/.forgejo/scripts/validate-inputs.sh
 
-      - uses: https://forgejo.home.capilabs.dev/Homelab/ci-actions/setup-skaffold@v1
-      - uses: https://forgejo.home.capilabs.dev/Homelab/ci-actions/setup-kubectl@v1
+      # ci-actions is private, which the runner cannot clone on its own, so it is checked out with a
+      # token and used as local actions. Pinned to a tag.
+      - name: Checkout shared actions
+        uses: actions/checkout@v4
+        with:
+          repository: Homelab/ci-actions
+          ref: v1
+          token: ${{ secrets.ACTIONS_TOKEN }}
+          path: ci-actions
+          persist-credentials: false
 
-      - uses: https://forgejo.home.capilabs.dev/Homelab/ci-actions/setup-skaffolder@v1
+      - uses: ./ci-actions/setup-skaffold
+      - uses: ./ci-actions/setup-kubectl
+
+      - uses: ./ci-actions/setup-skaffolder
         with:
           npm-registry-host: ${{ vars.NPM_REGISTRY_HOST }}
           npm-token: ${{ secrets.SKAFFOLDER_FORGEJO_TOKEN }}
@@ -106,7 +117,7 @@ jobs:
       - name: Render manifests
         run: bash source/.forgejo/scripts/generate-manifests.sh
 
-      - uses: https://forgejo.home.capilabs.dev/Homelab/ci-actions/setup-kubeconfig@v1
+      - uses: ./ci-actions/setup-kubeconfig
         with:
           kubeconfig-b64: ${{ secrets.KUBECONFIG_B64 }}
 
