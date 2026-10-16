@@ -33,12 +33,9 @@ env:
   IMAGE_NAME: homelab/tenantos-registrar
   JDK_VERSION: "21-jdk-alpine"
   JRE_VERSION: "21-jre-alpine"
-  ACTIONS_TOKEN: ${{ secrets.ACTIONS_TOKEN }}
   
   # Repo holding skaffolder's schemas/ (manifest templates) and configs/ (per-project values).
   CONFIGS_REPO: Homelab/skaffolder-configs.git
-  # Host Forgejo advertises for its npm packages (differs from REGISTRY).
-  NPM_REGISTRY_HOST: ${{ vars.NPM_REGISTRY_HOST }}
 
   # --- Kubernetes --------------------------------------------------------------
   DEPLOY_ENV: ${{ inputs.env || 'dev' }}
@@ -155,25 +152,13 @@ jobs:
           git -C source checkout --detach "${COMMIT_SHA}"
           ls source/k8s
 
-      - name: Configure Forgejo npm registry
-        env:
-          SKAFFOLDER_FORGEJO_TOKEN: ${{ secrets.SKAFFOLDER_FORGEJO_TOKEN }}
-        run: |
-          set -euo pipefail
-          npm config set @homelab:registry "https://${NPM_REGISTRY_HOST}/api/packages/Homelab/npm/"
-          npm config set "//${NPM_REGISTRY_HOST}/api/packages/Homelab/npm/:_authToken" "${SKAFFOLDER_FORGEJO_TOKEN}"
-
-      - name: Install skaffolder
-        run: npm install -g @homelab/skaffolder
-
-      # The package ships only the CLI; templates and configs come from CONFIGS_REPO.
-      - name: Checkout skaffolder configs
-        run: |
-          set -euo pipefail
-          rm -rf skaffolder-configs
-          git clone --depth 1 \
-            "https://x-access-token:${{ env.ACTIONS_TOKEN }}@${{env.REGISTRY}}/${{ env.CONFIGS_REPO }}" \
-            skaffolder-configs
+      - uses: https://forgejo.home.capilabs.dev/Homelab/ci-actions/setup-skaffolder@v1
+        with:
+          npm-registry-host: ${{ vars.NPM_REGISTRY_HOST }}
+          npm-token: ${{ secrets.SKAFFOLDER_FORGEJO_TOKEN }}
+          registry-host: ${{ env.REGISTRY }}
+          configs-repo: ${{ env.CONFIGS_REPO }}
+          configs-token: ${{ secrets.ACTIONS_TOKEN }}
 
       - name: Generate skaffold manifests
         run: |
@@ -185,12 +170,7 @@ jobs:
             --v
           ls ./output ./output/manifests
 
-      - name: Install skaffold
-        run: |
-          set -euo pipefail
-          curl -Lo skaffold https://storage.googleapis.com/skaffold/releases/latest/skaffold-linux-amd64
-          sudo install skaffold /usr/local/bin/
-          skaffold version
+      - uses: https://forgejo.home.capilabs.dev/Homelab/ci-actions/setup-skaffold@v1
 
       - name: Render manifest with skaffold
         run: |
@@ -243,43 +223,13 @@ jobs:
           rm bundle.enc
           ls manifest.yaml skaffold.yaml k8s/rbac.yaml
 
-      - name: Install skaffold
-        run: |
-          set -euo pipefail
-          curl -Lo skaffold https://storage.googleapis.com/skaffold/releases/latest/skaffold-linux-amd64
-          sudo install skaffold /usr/local/bin/
-          skaffold version
+      - uses: https://forgejo.home.capilabs.dev/Homelab/ci-actions/setup-skaffold@v1
 
-      - name: Set up kubectl
-        run: |
-          set -euo pipefail
-          KUBECTL_VERSION="$(curl -fsSL https://dl.k8s.io/release/stable.txt)"
-          mkdir -p "${RUNNER_TEMP}/bin"
-          curl -fsSL -o "${RUNNER_TEMP}/bin/kubectl" \
-            "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
-          chmod +x "${RUNNER_TEMP}/bin/kubectl"
-          echo "${RUNNER_TEMP}/bin" >> "$GITHUB_PATH"
-          "${RUNNER_TEMP}/bin/kubectl" version --client
+      - uses: https://forgejo.home.capilabs.dev/Homelab/ci-actions/setup-kubectl@v1
 
-      - name: Configure kubeconfig
-        env:
-          KUBECONFIG_B64: ${{ secrets.KUBECONFIG_B64 }}
-        run: |
-          set -euo pipefail
-          # Kargo marks the promotion done once the dispatch is accepted, so a
-          # skipped deploy would look like a success. Fail instead.
-          if [ -z "${KUBECONFIG_B64}" ]; then
-            echo "::error::KUBECONFIG_B64 secret is not set"
-            exit 1
-          fi
-          mkdir -p "$HOME/.kube"
-          B64="$(printf '%s' "${KUBECONFIG_B64}" | tr -d ' \t\r\n')"
-          MOD=$(( ${#B64} % 4 ))
-          if [ "$MOD" -ne 0 ]; then
-            B64="${B64}$(printf '=%.0s' $(seq 1 $((4 - MOD))))"
-          fi
-          printf '%s' "$B64" | base64 -d --ignore-garbage > "$HOME/.kube/config"
-          chmod 600 "$HOME/.kube/config"
+      - uses: https://forgejo.home.capilabs.dev/Homelab/ci-actions/setup-kubeconfig@v1
+        with:
+          kubeconfig-b64: ${{ secrets.KUBECONFIG_B64 }}
 
       # No migration step: Flyway runs via the `migration` Spring profile, not from the pipeline.
       - name: Apply manifest with skaffold
