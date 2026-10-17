@@ -1,5 +1,8 @@
 name: Deploy Tenant App
 
+# Shown in the run list instead of the static name above. Needs a Forgejo version that supports run-name.
+run-name: Deploy Tenant App - ${{ inputs.app_name }}
+
 # Dispatched by the registrar's DISPATCH_TENANT_DEPLOY provisioning step, once per app (backend, ui)
 # for every new tenant. It is not run by hand or by Kargo: the image is chosen by the registrar
 # (tenant.deployment.backend-image / ui-image), and the target is the tenant's own namespace.

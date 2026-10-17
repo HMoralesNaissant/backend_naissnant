@@ -1,5 +1,9 @@
 name: Build and Deploy
 
+# Shown in the run list instead of the static name above. Needs a Forgejo version that supports run-name.
+# The `env` context is unavailable here, so the app name is literal; Kargo deploy dispatches add the env.
+run-name: Build and Deploy - tenantos-registrar${{ inputs.image != '' && format(' ({0})', inputs.env) || '' }}
+
 # Pushes build the image and push it to the Forgejo registry; Kargo then picks up
 # the new tag and promotes it dev -> qa -> prod by dispatching this workflow with
 # `env` and `image`, which runs only the deploy job.
